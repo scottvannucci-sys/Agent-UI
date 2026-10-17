@@ -34,9 +34,22 @@ export function hermesHomeCandidates(): string[] {
   return candidates;
 }
 
+/** Files that distinguish a real Hermes home from an unrelated directory. */
+const HOME_MARKERS = ["state.db", "kanban.db", "gateway_state.json", "spawn-ledger.json"];
+
+function looksLikeHermesHome(dir: string): boolean {
+  return HOME_MARKERS.some((m) => fs.existsSync(path.join(dir, m)));
+}
+
 export function findHermesHome(): string | null {
-  for (const c of hermesHomeCandidates()) {
-    if (fs.existsSync(c)) return c;
+  // An explicit override is used as-is (the user knows their setup).
+  const override = process.env.AGENT_UI_HERMES_HOME;
+  if (override) return override;
+  const candidates = hermesHomeCandidates();
+  // A directory merely existing isn't enough (e.g. a config-only
+  // ~/.config/hermes shadows the real home) — require a marker file first.
+  for (const c of candidates) {
+    if (fs.existsSync(c) && looksLikeHermesHome(c)) return c;
   }
   return null;
 }
