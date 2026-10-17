@@ -1,8 +1,7 @@
 /**
- * Pixel-art sprites as string grids. Each row string indexes into `palette`
- * by character; '.' is transparent. All character sprites are 16×16 and use
- * the shared body keys so they can be palette-swapped per bot:
- *   D outline · H hair · K skin · W eye · S shirt · P pants · E shoes
+ * Pixel-art prop sprites as string grids (24×24). Each row indexes `palette`
+ * by character; '.' is transparent. Characters are drawn procedurally — see
+ * characters.ts — these grids cover the more organic props.
  */
 
 export interface Sprite {
@@ -12,229 +11,137 @@ export interface Sprite {
   rows: string[];
 }
 
-const BODY: Record<string, string> = {
-  D: "#26262e",
-  H: "#3a2a1c",
-  K: "#f0c8a0",
-  W: "#ffffff",
-  S: "#4f6d9e",
-  P: "#3a3f4a",
-  E: "#1c1c22",
-};
-
-/* 16×16, facing the camera. Feet on the bottom row. */
-const BOT_STAND = [
-  "....DDDDDDDD....",
-  "...DHHHHHHHHD...",
-  "...DHHHHHHHHD...",
-  "...DHKKKKKKHD...",
-  "...DKWKKKWKKD...",
-  "...DKKKKKKKKD...",
-  "....DKKKKKKD....",
-  "....DSSSSSSD....",
-  "...DSSSSSSSSD...",
-  "..DKSSSSSSSSKD..",
-  "..DKSSSSSSSSKD..",
-  "...DPPPPPPPPD...",
-  "...DPPPPPPPPD...",
-  "...DPPD..DPPD...",
-  "...DEED..DEED...",
-  "..DEEED..DEEED..",
-];
-
-/* Walk A: left leg forward (raised), arms swing. */
-const BOT_WALK_A = [
-  "....DDDDDDDD....",
-  "...DHHHHHHHHD...",
-  "...DHHHHHHHHD...",
-  "...DHKKKKKKHD...",
-  "...DKWKKKWKKD...",
-  "...DKKKKKKKKD...",
-  "....DKKKKKKD....",
-  "....DSSSSSSD....",
-  "..DKSSSSSSSSD...",
-  "..DKSSSSSSSSKD..",
-  "...DSSSSSSSSKD..",
-  "...DPPPPPPPPD...",
-  "...DPPPPPPPPD...",
-  "...DPPD..DPPD...",
-  "...DEED..DPPD...",
-  "..DEEED...EED...",
-];
-
-/* Walk B: mirror stride. */
-const BOT_WALK_B = [
-  "....DDDDDDDD....",
-  "...DHHHHHHHHD...",
-  "...DHHHHHHHHD...",
-  "...DHKKKKKKHD...",
-  "...DKWKKKWKKD...",
-  "...DKKKKKKKKD...",
-  "....DKKKKKKD....",
-  "....DSSSSSSD....",
-  "...DSSSSSSSSD...",
-  "..DKSSSSSSSSKD..",
-  "..DKSSSSSSSSD...",
-  "...DPPPPPPPPD...",
-  "...DPPPPPPPPD...",
-  "...DPPD..DPPD...",
-  "...DPPD..DEED...",
-  "...EED...DEEED..",
-];
-
-/* Sitting at a desk: lower body hidden by the desk, hands forward typing. */
-const BOT_SIT_A = [
-  "....DDDDDDDD....",
-  "...DHHHHHHHHD...",
-  "...DHHHHHHHHD...",
-  "...DHKKKKKKHD...",
-  "...DKWKKKWKKD...",
-  "...DKKKKKKKKD...",
-  "....DKKKKKKD....",
-  "....DSSSSSSD....",
-  "...DSSSSSSSSD...",
-  "..DSSSSSSSSSSD..",
-  "..DKSSSSSSSSKD..",
-  "..DKKSSSSSSKKD..",
-  "..DDDDDDDDDDDD..",
-  "................",
-  "................",
-  "................",
-];
-
-const BOT_SIT_B = [
-  "....DDDDDDDD....",
-  "...DHHHHHHHHD...",
-  "...DHHHHHHHHD...",
-  "...DHKKKKKKHD...",
-  "...DKWKKKWKKD...",
-  "...DKKKKKKKKD...",
-  "....DKKKKKKD....",
-  "....DSSSSSSD....",
-  "..DKSSSSSSSSD...",
-  "..DKSSSSSSSSKD..",
-  "..DKSSSSSSSSKD..",
-  "..DSSSSSSSSSSD..",
-  "..DDDDDDDDDDDD..",
-  "................",
-  "................",
-  "................",
-];
-
-/* Carrying a ream of paper (W block held at chest). */
-const BOT_CARRY = [
-  "....DDDDDDDD....",
-  "...DHHHHHHHHD...",
-  "...DHHHHHHHHD...",
-  "...DHKKKKKKHD...",
-  "...DKWKKKWKKD...",
-  "...DKKKKKKKKD...",
-  "....DKKKKKKD....",
-  "....DSSSSSSD....",
-  "..DKSSWWWWSSKD..",
-  "..DKSWWWWWSKD...",
-  "..DKSWWWWWSKD...",
-  "..DKSSWWWWSSKD..",
-  "...DPPPPPPPPD...",
-  "...DPPD..DPPD...",
-  "...DEED..DEED...",
-  "..DEEED..DEEED..",
-];
-
-/* Water cooler. */
-const WATERCOOLER = [
-  "....DDDDDD......",
-  "...DWWWWWWD.....",
-  "..DWWWWWWWWD....",
-  "..DWCCCCCCWD....",
-  "..DWCCCCCCWD....",
-  "..DWWWWWWWWD....",
-  "...DWWWWWWD.....",
-  "....DDDDDD......",
-  "....DGGGGD......",
-  "....DGGGGD......",
-  "....DGwwGD......",
-  "....DGGGGD......",
-  "....DGGGGD......",
-  "....DGGGGD......",
-  "....DDDDDD......",
-  "................",
-];
-
-/* Potted plant. */
-const PLANT = [
-  "......GG........",
-  ".....GGGG.......",
-  "....GGgGGG......",
-  "...GGGgGGGG.....",
-  "...GgGGGGgG.....",
-  "....GGGGGG......",
-  ".....GGGG.......",
-  "......GG........",
-  "....DDDDDD......",
-  "....DppppD......",
-  "....DppppD......",
-  ".....DppD.......",
-  ".....DppD.......",
-  ".....DppD.......",
-  "....DDDDDD......",
-  "................",
-];
-
-/* Cardboard box. */
-const BOX = [
-  "................",
-  "................",
-  "..DDDDDDDDDDD...",
-  ".DBBBBBBBBBBD...",
-  ".DBBBBBBBBBBD...",
-  ".DDDDtDDDDDDD...",
-  ".DBBBBtBBBBBD...",
-  ".DBBBBtBBBBBD...",
-  ".DBBBBtBBBBBD...",
-  ".DBBBBtBBBBBD...",
-  ".DDDDDDDDDDDD...",
-  ".DBBBBBBBBBBD...",
-  ".DBBBBBBBBBBD...",
-  ".DDDDDDDDDDDD...",
-  "................",
-  "................",
-];
-
-/* Coffee machine. */
-const COFFEE_MAKER = [
-  "................",
-  "..DDDDDDDDDD....",
-  ".DkkkkkkkkkkD...",
-  ".DkDDDDDDDDkD...",
-  ".DkDrrrrrrDkD...",
-  ".DkDDDDDDDDkD...",
-  ".DkkkkkkkkkkD...",
-  ".DkkkkkkkkkkD...",
-  ".DkkggggggkkD...",
-  ".DkkggggggkkD...",
-  ".DkkkkkkkkkkD...",
-  ".DkkkkkkkkkkD...",
-  ".DDDDDDDDDDDD...",
-  "................",
-  "................",
-  "................",
-];
-
 const ITEM: Record<string, string> = {
-  D: "#26262e",
-  W: "#e8eef2",
-  C: "#4f9bd6",
-  G: "#d5d8da",
-  g: "#8fa3ad",
-  w: "#ffffff",
-  B: "#c08a52",
-  t: "#8a5a33",
-  k: "#7f8a92",
-  r: "#e05555",
-  p: "#a5502c",
-  G2: "#3f7d44",
+  D: "#26262e", // outline
+  W: "#e8eef2", // bottle plastic / white
+  C: "#4f9bd6", // water
+  c: "#7db8e0", // light water
+  G: "#d5d8da", // light plastic
+  g: "#8fa3ad", // dark plastic
+  B: "#c08a52", // cardboard
+  b: "#9a6b3d", // cardboard dark
+  t: "#8a5a33", // tape
+  k: "#7f8a92", // metal
+  r: "#e05555", // red light
+  p: "#a5502c", // pot
+  p2: "#7c3a1e", // pot dark
+  L: "#3f7d44", // leaf
+  l: "#57a05c", // leaf light
+  d: "#2d5c31", // leaf dark
+  f: "#6b4a2b", // coffee
 };
+
+/* ---------------- water cooler 24×24 ---------------- */
+const WATERCOOLER = [
+  "........DDDDDDDD........",
+  ".......DWWWWWWWWD.......",
+  "......DWWWWWWWWWWD......",
+  "......DWCCCCCCCCWD......",
+  "......DWCcCCCCcCWD......",
+  "......DWCCCCCCCCWD......",
+  "......DWCcCCCCCCCWD.....",
+  "......DWCCCCCCCCWD......",
+  "......DWWWWWWWWWWD......",
+  ".......DWWWWWWWWD.......",
+  "........DDDDDDDD........",
+  "........DGGGGGGD........",
+  "........DGgggggD........",
+  "........DGrGGGGD........",
+  "........DGgggggD........",
+  "........DGGGGGGD........",
+  "........DGGGGGGD........",
+  "........DGDDDDGD........",
+  "........DGGGGGGD........",
+  "........DDDDDDDD........",
+  "..........DDDD..........",
+  "........................",
+  "........................",
+  "........................",
+];
+
+/* ---------------- potted plant 24×24 ---------------- */
+const PLANT = [
+  "...........LL...........",
+  "......LL...LL...........",
+  ".....LLLLLdLLL..........",
+  "....LLLLdLLLLLL.........",
+  "...LLdLLLLLLdLLL........",
+  "...LLLLLLdLLLLLL........",
+  "....LLLdLLLLLdLL........",
+  ".....LLLLLLdLLL.........",
+  "......LLdLLLLL..........",
+  ".......LLLLLL...........",
+  "........dLLLd...........",
+  ".........LLL............",
+  ".........dLd............",
+  "........DDDDDD..........",
+  "........DpppppD.........",
+  "........DpppppD.........",
+  ".........DpppD..........",
+  ".........Dpp2D..........",
+  ".........Dpp2D..........",
+  ".........Dpp2D..........",
+  "........DDDDDDD.........",
+  "........................",
+  "........................",
+  "........................",
+];
+
+/* ---------------- cardboard box 24×24 ---------------- */
+const BOX = [
+  "........................",
+  "........................",
+  "..DDDDDDDDDDDDDDDDDD....",
+  "..DBBBBBBBBBBBBBBBBD....",
+  "..DBBBBBBBBBBBBBBBBD....",
+  "..DDDDDDtDDDDDDDDDDD....",
+  "..DBBBBBtBBBBBBBBBD.....",
+  "..DBBBBBtBBBBBBBBBD.....",
+  "..DBBBBBtBBBBBBBBBD.....",
+  "..DBBBBBtBBBBBBBBBD.....",
+  "..DBBBBBtBBBBBBBBBD.....",
+  "..DDDDDDtDDDDDDDDDDD....",
+  "..DBBBBBtBBBBBBBBBD.....",
+  "..DBBBBBtBBBBBBBBBD.....",
+  "..DBBBBBtBBBBBBBBBD.....",
+  "..DDDDDDDDDDDDDDDDDD....",
+  "..DBBBBBBBBBBBBBBBBD....",
+  "..DBBBBBBBBBBBBBBBBD....",
+  "..DDDDDDDDDDDDDDDDDD....",
+  "........................",
+  "........................",
+  "........................",
+  "........................",
+  "........................",
+];
+
+/* ---------------- coffee maker 24×24 ---------------- */
+const COFFEE_MAKER = [
+  "........................",
+  "...DDDDDDDDDDDDDDDD.....",
+  "..DggggggggggggggggD....",
+  "..DgDDDDDDDDDDDDDDgD....",
+  "..DgDffffffffffffDgD....",
+  "..DgDffffffffffffDgD....",
+  "..DgDDDDDDDDDDDDDDgD....",
+  "..DggggggggggggggggD....",
+  "..DggggggggggggggggD....",
+  "..DgGGGGGGGGGGGGGGgD....",
+  "..DgGrrGGGGGGGGGGGgD....",
+  "..DgGGGGGGGGGGGGGGgD....",
+  "..DggggggggggggggggD....",
+  "..DggggggggggggggggD....",
+  "..DgGGGGGGGGGGGGGGgD....",
+  "..DgGffffffffffffGgD....",
+  "..DgGffffffffffffGgD....",
+  "..DgGGGGGGGGGGGGGGgD....",
+  "..DggggggggggggggggD....",
+  "..DDDDDDDDDDDDDDDDDD....",
+  "........................",
+  "........................",
+  "........................",
+  "........................",
+];
 
 function mk(rows: string[], palette: Record<string, string>): Sprite {
   const w = rows[0].length;
@@ -253,15 +160,6 @@ export function assertSprites(sprites: Record<string, Sprite>): void {
   }
 }
 
-export const CHAR_SPRITES: Record<string, Sprite> = {
-  stand: mk(BOT_STAND, BODY),
-  walkA: mk(BOT_WALK_A, BODY),
-  walkB: mk(BOT_WALK_B, BODY),
-  sitA: mk(BOT_SIT_A, BODY),
-  sitB: mk(BOT_SIT_B, BODY),
-  carry: mk(BOT_CARRY, BODY),
-};
-
 export const ITEM_SPRITES: Record<string, Sprite> = {
   watercooler: mk(WATERCOOLER, ITEM),
   plant: mk(PLANT, ITEM),
@@ -269,4 +167,10 @@ export const ITEM_SPRITES: Record<string, Sprite> = {
   coffee: mk(COFFEE_MAKER, ITEM),
 };
 
-export const ALL_SPRITES = { ...CHAR_SPRITES, ...ITEM_SPRITES };
+if (typeof process !== "undefined" && process.env?.NODE_ENV !== "production") {
+  try {
+    assertSprites(ITEM_SPRITES);
+  } catch {
+    /* validated again by the preview tool */
+  }
+}

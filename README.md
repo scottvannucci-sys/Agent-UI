@@ -117,8 +117,15 @@ tools/
 - The renderer draws through a tiny `PixelTarget.rect()` interface, so the
   exact same scene code runs in the browser canvas and in the Node PNG
   preview — no native image deps anywhere.
-- All art is original pixel work (string-grid sprites + rect primitives);
-  characters are palette-swapped per bot from a hash of their session id.
+- The office is a 36×22 tile map with **24px tiles** (864×528 world). All art
+  is original pixel work; characters are **composed procedurally** in
+  `src/office/characters.ts` (24×30 bodies with 6 hair styles, glasses, ties,
+  skirts, and palette-swapped outfits from a hash of the session id), with
+  walk/sit/carry animation frames and contact shadows.
+- Furniture is drawn with layered rect primitives and gets ambient life:
+  monitors show scrolling terminal lines, the coffee machine steams, the
+  copier runs a scanning light, the watercooler bottle bubbles, and the boss's
+  desk lamp lights the office only while the gateway is healthy.
 - Bot movement is BFS over the walkable tile grid; states map to locations
   (desk seat, watercooler, coffee machine, conference seats, boss office,
   printer for paper errands).

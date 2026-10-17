@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { OfficeScene } from "@/office/scene";
+import { MAP_H, MAP_W, TILE } from "@/office/floorplan";
 import type { BotSpec } from "@/lib/hermes/derive";
 import type { OfficeEvent } from "@/lib/hermes/types";
 
@@ -12,8 +13,8 @@ interface Props {
   onSelect: (id: string | null) => void;
 }
 
-const WORLD_W = 36 * 16;
-const WORLD_H = 22 * 16;
+const WORLD_W = MAP_W * TILE;
+const WORLD_H = MAP_H * TILE;
 
 export default function OfficeCanvas({ bots, events, selectedId, onSelect }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);

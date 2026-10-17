@@ -1,7 +1,7 @@
 import { C } from "./palette";
 
 /**
- * The Dunder Bots office floor plan: a 36×22 tile map (16px tiles), furniture
+ * The Dunder Bots office floor plan: a 36×22 tile map (24px tiles), furniture
  * placement, walkability grid, BFS pathfinding and zone targets.
  *
  * Layout:
@@ -11,7 +11,7 @@ import { C } from "./palette";
  *   y21   : front door (x23-24)
  */
 
-export const TILE = 16;
+export const TILE = 24;
 export const MAP_W = 36;
 export const MAP_H = 22;
 
@@ -319,7 +319,7 @@ export const DESKS: Desk[] = (() => {
 })();
 
 /** Monitor screen rect (px) inside a desk tile, for the on/off glow. */
-export const DESK_SCREEN = { dx: 4, dy: 1, w: 7, h: 5 };
+export const DESK_SCREEN = { dx: 6, dy: 2, w: 12, h: 8 };
 
 export const ZONES = {
   door: { x: 23, y: 20 },

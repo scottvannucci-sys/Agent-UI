@@ -97,12 +97,14 @@ const COLS = 36 * ZOOM,
 const sx = width / COLS,
   sy = height / ROWS;
 
+const TILE_PX = 24; // keep in sync with src/office/floorplan.ts
+
 // Region mode: file tx ty tw th → 1px-per-char dump of that tile region
 if (process.argv.length >= 6) {
-  const tx = Number(process.argv[3]) * 16;
-  const ty = Number(process.argv[4]) * 16;
-  const tw = Number(process.argv[5]) * 16;
-  const th = Number(process.argv[6]) * 16;
+  const tx = Number(process.argv[3]) * TILE_PX;
+  const ty = Number(process.argv[4]) * TILE_PX;
+  const tw = Number(process.argv[5]) * TILE_PX;
+  const th = Number(process.argv[6]) * TILE_PX;
   for (let y = ty; y < Math.min(ty + th, height); y++) {
     let line = "";
     for (let x = tx; x < Math.min(tx + tw, width); x++) {

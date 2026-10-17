@@ -1,5 +1,6 @@
 import zlib from "node:zlib";
 import { OfficeScene } from "@/office/scene";
+import { MAP_H, MAP_W, TILE } from "@/office/floorplan";
 import type { PixelTarget } from "@/office/render-core";
 import { deriveBots } from "@/lib/hermes/derive";
 import { fetchMockSnapshot } from "@/lib/hermes/sources/mock";
@@ -8,8 +9,8 @@ import type { OfficeEvent } from "@/lib/hermes/types";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const W = 36 * 16;
-const H = 22 * 16;
+const W = MAP_W * TILE;
+const H = MAP_H * TILE;
 
 /** RGBA framebuffer PixelTarget with alpha blending. */
 class Raster implements PixelTarget {

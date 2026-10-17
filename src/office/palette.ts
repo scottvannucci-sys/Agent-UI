@@ -64,6 +64,13 @@ export const C = {
     "#5a7a5a",
   ],
   pants: ["#3a3f4a", "#5a4a3a", "#2f4a5a", "#4a4a4a"],
+  shoe: "#2b2b33",
+  tie: ["#9e4f5a", "#4f6d9e", "#b08c3f", "#3f8f9e", "#5a6b7a"],
+
+  sky: "#aee0ef",
+  skyDeep: "#8fc9dd",
+  grout: "#b3ab99",
+  shadow: "rgba(20,25,35,0.20)",
 } as const;
 
 /** Deterministic palette override for a bot, from its hash seed. */
