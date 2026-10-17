@@ -64,6 +64,7 @@ export class OfficeScene {
   private activeDesks = new Set<string>();
   private boss: Entity;
   private gatewayRunning = true;
+  private gatewayDegraded = false;
   private bossVisible = true;
 
   constructor() {
@@ -248,7 +249,8 @@ export class OfficeScene {
   }
 
   /** Align the boss with the actual gateway state (no event required). */
-  setGateway(running: boolean): void {
+  setGateway(running: boolean, degraded = false): void {
+    this.gatewayDegraded = degraded;
     if (running === this.gatewayRunning) return;
     this.gatewayRunning = running;
     this.bossVisible = running;
@@ -648,12 +650,22 @@ export class OfficeScene {
     // phone
     t.rect(px + W - 18, py + 11, 5, 2, C.metalDark);
     t.rect(px + W - 17, py + 11, 3, 1, C.metal);
-    // lamp: pole + head + warm glow when the gateway is healthy
+    // lamp: pole + head + warm glow; blinks red while degraded
     t.rect(px + W - 7, py + 4, 1, 6, C.metalDark);
-    t.rect(px + W - 9, py + 2, 4, 3, this.gatewayRunning ? C.amber : C.metalDark);
-    if (this.gatewayRunning) {
+    const lampBlink = Math.floor(now / 600) % 2 === 0;
+    const lampColor = !this.gatewayRunning
+      ? C.metalDark
+      : this.gatewayDegraded
+        ? lampBlink
+          ? C.red
+          : C.amber
+        : C.amber;
+    t.rect(px + W - 9, py + 2, 4, 3, lampColor);
+    if (this.gatewayRunning && !this.gatewayDegraded) {
       t.rect(px + W - 11, py + 5, 8, 6, "rgba(216,195,74,0.14)");
       t.rect(px + W - 12, py + 8, 10, 3, "rgba(216,195,74,0.09)");
+    } else if (this.gatewayRunning && this.gatewayDegraded && lampBlink) {
+      t.rect(px + W - 11, py + 5, 8, 6, "rgba(224,85,85,0.12)");
     }
   }
 

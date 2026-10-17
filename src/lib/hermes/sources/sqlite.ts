@@ -235,6 +235,13 @@ const GATEWAY_RUNNING_WORDS = new Set([
   "up",
   "ok",
   "ready",
+  // the process is alive even if a platform is failing
+  "degraded",
+  "partial",
+  "starting",
+  "restarting",
+  "recovering",
+  "busy",
 ]);
 const GATEWAY_STOPPED_WORDS = new Set([
   "stopped",
@@ -244,9 +251,62 @@ const GATEWAY_STOPPED_WORDS = new Set([
   "down",
   "error",
   "failed",
+  "fatal",
   "inactive",
   "disabled",
 ]);
+const GATEWAY_HEALTHY_PLATFORM_STATES = new Set([
+  "connected",
+  "ok",
+  "running",
+  "healthy",
+  "active",
+  "ready",
+  "listening",
+  "up",
+]);
+
+interface GatewayPlatformRaw {
+  name: string;
+  state: string;
+  error?: string | null;
+  needsAttention?: boolean;
+}
+
+function parseGatewayPlatforms(input: unknown): GatewayPlatformRaw[] {
+  const out: GatewayPlatformRaw[] = [];
+  if (Array.isArray(input)) {
+    for (const v of input) {
+      if (v && typeof v === "object") {
+        const p = v as Record<string, unknown>;
+        const name = String(p.name ?? p.platform ?? p.id ?? "");
+        if (name) {
+          out.push({
+            name,
+            state: String(p.state ?? p.status ?? "unknown"),
+            error: typeof p.error_message === "string" ? p.error_message : null,
+            needsAttention: p.needs_attention === true,
+          });
+        }
+      }
+    }
+  } else if (input && typeof input === "object") {
+    for (const [name, v] of Object.entries(input as Record<string, unknown>)) {
+      if (v && typeof v === "object") {
+        const p = v as Record<string, unknown>;
+        out.push({
+          name,
+          state: String(p.state ?? p.status ?? "unknown"),
+          error: typeof p.error_message === "string" ? p.error_message : null,
+          needsAttention: p.needs_attention === true,
+        });
+      } else if (typeof v === "string") {
+        out.push({ name, state: v });
+      }
+    }
+  }
+  return out;
+}
 
 /**
  * Parse gateway_state.json tolerantly — Hermes builds have shipped a few
@@ -271,16 +331,14 @@ function parseGatewayJson(raw: string): GatewayStatus | null {
   }
 
   let running: boolean | undefined;
+  let rawState: string | null = null;
   for (const k of ["gateway_state", "state", "status", "gateway_status", "health"]) {
     const v = o[k];
     if (typeof v === "string") {
       const s = v.toLowerCase();
-      if (GATEWAY_RUNNING_WORDS.has(s)) {
-        running = true;
-        break;
-      }
-      if (GATEWAY_STOPPED_WORDS.has(s)) {
-        running = false;
+      if (GATEWAY_RUNNING_WORDS.has(s) || GATEWAY_STOPPED_WORDS.has(s)) {
+        rawState = v;
+        running = GATEWAY_RUNNING_WORDS.has(s);
         break;
       }
     }
@@ -289,11 +347,26 @@ function parseGatewayJson(raw: string): GatewayStatus | null {
   if (running === undefined && typeof o.is_running === "boolean") running = o.is_running;
   if (running === undefined) return null;
 
+  const platforms = parseGatewayPlatforms(o.platforms);
+  const degraded =
+    (rawState?.toLowerCase() === "degraded") ||
+    (running &&
+      platforms.length > 0 &&
+      platforms.some((p) => !GATEWAY_HEALTHY_PLATFORM_STATES.has(p.state.toLowerCase())));
+
   const num = (v: unknown): number | undefined => (typeof v === "number" ? v : undefined);
-  const ts = (v: unknown): number | null | undefined =>
-    typeof v === "number" ? (v > 1e12 ? v / 1000 : v) : undefined;
+  // Epoch seconds, epoch millis, or null — Linux /proc-style start times
+  // (seconds since boot) are not dates and become null.
+  const ts = (v: unknown): number | null | undefined => {
+    if (typeof v !== "number") return undefined;
+    if (v > 1.2e12) return v / 1000;
+    if (v > 1.1e9) return v;
+    return null;
+  };
   return {
     running,
+    degraded,
+    rawState,
     pid: num(o.pid),
     version:
       typeof o.code_version === "string"
@@ -301,12 +374,9 @@ function parseGatewayJson(raw: string): GatewayStatus | null {
         : typeof o.version === "string"
           ? o.version
           : null,
-    startedAt:
-      ts(o.start_time) ??
-      ts(o.started_at) ??
-      ts(o.start_time_ms) ??
-      null,
+    startedAt: ts(o.start_time) ?? ts(o.started_at) ?? ts(o.start_time_ms) ?? null,
     activeAgents: typeof o.active_agents === "number" ? o.active_agents : null,
+    platforms: platforms.length ? platforms : undefined,
   };
 }
 
@@ -356,6 +426,19 @@ export async function fetchSqliteSnapshot(home: string): Promise<HermesSnapshot>
   const gw = readGateway(home);
   if (gw) {
     gateway = gw;
+    if (gw.degraded) {
+      const bad = (gw.platforms ?? []).filter(
+        (p) => !GATEWAY_HEALTHY_PLATFORM_STATES.has(p.state.toLowerCase()),
+      );
+      const detail = bad
+        .map((p) => `${p.name} ${p.state}${p.error ? ` (${p.error.slice(0, 80)})` : ""}`)
+        .join("; ");
+      degradations.push(
+        detail
+          ? `Gateway degraded: ${detail}`
+          : `Gateway degraded (${gw.rawState ?? "unknown state"})`,
+      );
+    }
   } else {
     // No usable gateway file: a headless `hermes serve` writes a spawn ledger
     // instead — if it lists a serve process, treat the gateway as up.

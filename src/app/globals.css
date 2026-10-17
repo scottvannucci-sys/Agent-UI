@@ -178,6 +178,11 @@ body {
   box-shadow: 0 0 6px var(--amber);
 }
 
+.dot.warn {
+  background: var(--amber);
+  box-shadow: 0 0 6px var(--red);
+}
+
 .stat {
   margin-left: auto;
   display: flex;

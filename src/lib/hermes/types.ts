@@ -59,12 +59,24 @@ export interface HermesTaskRun {
   endedAt: number | null;
 }
 
+export interface GatewayPlatformState {
+  name: string;
+  state: string;
+  error?: string | null;
+  needsAttention?: boolean;
+}
+
 export interface GatewayStatus {
   running: boolean;
+  /** Gateway process is up but one or more platforms are failing. */
+  degraded?: boolean;
+  /** Literal gateway_state value from the source file, for diagnostics. */
+  rawState?: string | null;
   pid?: number;
   version?: string | null;
   startedAt?: number | null;
   activeAgents?: number | null;
+  platforms?: GatewayPlatformState[];
 }
 
 export interface HermesRoster {

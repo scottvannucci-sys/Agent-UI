@@ -88,7 +88,7 @@ export function discoverServeEndpoint(home: string): { host: string; port: numbe
       host?: string;
     }>;
     for (const e of entries) {
-      if ((e.purpose ?? "").includes("serve") && e.port) {
+      if (/(serve|dashboard|gateway|api)/.test(e.purpose ?? "") && e.port) {
         return { host: e.host || "127.0.0.1", port: e.port };
       }
     }

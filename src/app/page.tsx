@@ -26,6 +26,7 @@ export default function Page() {
               selectedId={selectedId}
               onSelect={setSelectedId}
               gatewayRunning={snapshot?.gateway?.running ?? false}
+              gatewayDegraded={snapshot?.gateway?.degraded === true}
             />
             <Inspector bot={selected} snapshot={snapshot} onClose={() => setSelectedId(null)} />
           </div>

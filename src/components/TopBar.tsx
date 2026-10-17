@@ -42,9 +42,21 @@ export default function TopBar({ snapshot, connected, sourceLabel, bots }: Props
         {sourceLabel}
       </span>
 
-      <span className="pill" title="Hermes gateway (the boss)">
-        <span className={`dot ${gateway?.running ? "on" : "off"}`} />
-        GATEWAY {gateway?.running ? "ONLINE" : "OFFLINE"}
+      <span
+        className="pill"
+        title={
+          gateway?.running
+            ? gateway?.degraded
+              ? `Gateway degraded: ${(gateway.platforms ?? [])
+                  .filter((p) => !["connected", "ok", "running", "healthy", "active", "ready", "listening", "up"].includes(p.state.toLowerCase()))
+                  .map((p) => `${p.name}: ${p.state}`)
+                  .join(", ") || (gateway.rawState ?? "degraded")}`
+              : "Hermes gateway running (the boss is in)"
+            : "Hermes gateway offline (the boss is out)"
+        }
+      >
+        <span className={`dot ${!gateway?.running ? "off" : gateway?.degraded ? "warn" : "on"}`} />
+        GATEWAY {gateway?.running ? (gateway?.degraded ? "DEGRADED" : "ONLINE") : "OFFLINE"}
         {gateway?.version ? ` · v${gateway.version}` : ""}
       </span>
 

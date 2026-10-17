@@ -12,12 +12,20 @@ interface Props {
   selectedId: string | null;
   onSelect: (id: string | null) => void;
   gatewayRunning: boolean;
+  gatewayDegraded: boolean;
 }
 
 const WORLD_W = MAP_W * TILE;
 const WORLD_H = MAP_H * TILE;
 
-export default function OfficeCanvas({ bots, events, selectedId, onSelect, gatewayRunning }: Props) {
+export default function OfficeCanvas({
+  bots,
+  events,
+  selectedId,
+  onSelect,
+  gatewayRunning,
+  gatewayDegraded,
+}: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const sceneRef = useRef<OfficeScene | null>(null);
   const seenEvents = useRef<Set<number>>(new Set());
@@ -69,8 +77,8 @@ export default function OfficeCanvas({ bots, events, selectedId, onSelect, gatew
   }, [selectedId]);
 
   useEffect(() => {
-    sceneRef.current?.setGateway(gatewayRunning);
-  }, [gatewayRunning]);
+    sceneRef.current?.setGateway(gatewayRunning, gatewayDegraded);
+  }, [gatewayRunning, gatewayDegraded]);
 
   const pickAt = (clientX: number, clientY: number): string | null => {
     const canvas = canvasRef.current;
