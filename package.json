@@ -1,0 +1,27 @@
+{
+  "name": "agent-ui",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Dunder Bots, Inc. — a pixel-art office GUI that visualizes Hermes bots at work",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "tsc --noEmit",
+    "preview:render": "node tools/render-preview.mjs"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "dependencies": {
+    "next": "^15.4.0",
+    "react": "~19.2.9",
+    "react-dom": "~19.2.9"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "^5.5.0"
+  }
+}
