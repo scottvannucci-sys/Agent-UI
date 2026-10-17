@@ -33,6 +33,19 @@ pnpm start        # http://localhost:3000
 On first load the UI shows the **Demo Office** (simulated staff) until it finds
 Hermes data — then the badge flips to `LIVE · hermes desktop`.
 
+### Platforms
+
+Runs anywhere Node ≥ 22.5 runs — **Windows, Linux, and macOS** — with the same
+commands (`node:sqlite` ships in Node; there are no native modules or
+platform-specific assets). The only platform-aware part is auto-detecting the
+Hermes data directory, which checks the standard locations on all three OSes
+(`%LOCALAPPDATA%\hermes`, `$XDG_DATA_HOME/hermes` + `~/.local/share/hermes`,
+`~/.config/hermes`, `~/.hermes`, `~/Library/Application Support/hermes`).
+Point `AGENT_UI_HERMES_HOME` anywhere else — including a read-only copy or
+mount of a Hermes home from another machine. To visualize bots running on a
+different host, either set `AGENT_UI_HERMES_URL` to that host's `hermes serve`
+endpoint, or run this app on the machine that has the data.
+
 ---
 
 ## How it hooks into Hermes

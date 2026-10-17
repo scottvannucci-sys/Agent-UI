@@ -7,15 +7,25 @@ import os from "node:os";
  *
  * Resolution order:
  *  1. AGENT_UI_HERMES_HOME env var
- *  2. %LOCALAPPDATA%\hermes   (standard Windows desktop install)
- *  3. ~/.hermes               (linux-style home)
- *  4. ~/Library/Application Support/hermes (macOS)
+ *  2. %LOCALAPPDATA%\hermes                          (Windows desktop install)
+ *  3. $XDG_DATA_HOME/hermes or ~/.local/share/hermes (Linux)
+ *  4. $XDG_CONFIG_HOME/hermes or ~/.config/hermes    (Linux)
+ *  5. ~/.hermes
+ *  6. ~/Library/Application Support/hermes           (macOS)
  */
 export function findHermesHome(): string | null {
   const candidates: string[] = [];
   if (process.env.AGENT_UI_HERMES_HOME) candidates.push(process.env.AGENT_UI_HERMES_HOME);
   const localAppData = process.env.LOCALAPPDATA;
   if (localAppData) candidates.push(path.join(localAppData, "hermes"));
+  const xdgData = process.env.XDG_DATA_HOME;
+  candidates.push(
+    xdgData ? path.join(xdgData, "hermes") : path.join(os.homedir(), ".local", "share", "hermes"),
+  );
+  const xdgConfig = process.env.XDG_CONFIG_HOME;
+  candidates.push(
+    xdgConfig ? path.join(xdgConfig, "hermes") : path.join(os.homedir(), ".config", "hermes"),
+  );
   candidates.push(path.join(os.homedir(), ".hermes"));
   candidates.push(
     path.join(os.homedir(), "Library", "Application Support", "hermes"),
