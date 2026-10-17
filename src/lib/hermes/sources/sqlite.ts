@@ -2,6 +2,7 @@ import fs from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import {
   botRosterPath,
+  discoverServeEndpoint,
   gatewayStatePath,
   kanbanDbPath,
   stateDbPath,
@@ -225,17 +226,97 @@ function readKanban(home: string, deg: string[]): { tasks: HermesTask[]; runs: H
   }
 }
 
-function readGateway(home: string): GatewayStatus {
-  const raw = fs.readFileSync(gatewayStatePath(home), "utf8");
-  const j = JSON.parse(raw) as Record<string, unknown>;
-  const state = String(j.gateway_state ?? "");
+const GATEWAY_RUNNING_WORDS = new Set([
+  "running",
+  "online",
+  "started",
+  "active",
+  "healthy",
+  "up",
+  "ok",
+  "ready",
+]);
+const GATEWAY_STOPPED_WORDS = new Set([
+  "stopped",
+  "offline",
+  "exited",
+  "crashed",
+  "down",
+  "error",
+  "failed",
+  "inactive",
+  "disabled",
+]);
+
+/**
+ * Parse gateway_state.json tolerantly — Hermes builds have shipped a few
+ * shapes (flat desktop style, nested objects, status strings, booleans).
+ * Returns null when the file is missing or the shape is unrecognized.
+ */
+function parseGatewayJson(raw: string): GatewayStatus | null {
+  let j: unknown;
+  try {
+    j = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (!j || typeof j !== "object") return null;
+  let o = j as Record<string, unknown>;
+  for (const key of ["gateway", "hermes", "gateway_state_json"]) {
+    const inner = o[key];
+    if (inner && typeof inner === "object" && !Array.isArray(inner)) {
+      o = inner as Record<string, unknown>;
+      break;
+    }
+  }
+
+  let running: boolean | undefined;
+  for (const k of ["gateway_state", "state", "status", "gateway_status", "health"]) {
+    const v = o[k];
+    if (typeof v === "string") {
+      const s = v.toLowerCase();
+      if (GATEWAY_RUNNING_WORDS.has(s)) {
+        running = true;
+        break;
+      }
+      if (GATEWAY_STOPPED_WORDS.has(s)) {
+        running = false;
+        break;
+      }
+    }
+  }
+  if (running === undefined && typeof o.running === "boolean") running = o.running;
+  if (running === undefined && typeof o.is_running === "boolean") running = o.is_running;
+  if (running === undefined) return null;
+
+  const num = (v: unknown): number | undefined => (typeof v === "number" ? v : undefined);
+  const ts = (v: unknown): number | null | undefined =>
+    typeof v === "number" ? (v > 1e12 ? v / 1000 : v) : undefined;
   return {
-    running: state === "running",
-    pid: typeof j.pid === "number" ? j.pid : undefined,
-    version: (j.code_version as string) ?? null,
-    startedAt: typeof j.start_time === "number" ? (j.start_time as number) / 1000 : null,
-    activeAgents: (j.active_agents as number) ?? 0,
+    running,
+    pid: num(o.pid),
+    version:
+      typeof o.code_version === "string"
+        ? o.code_version
+        : typeof o.version === "string"
+          ? o.version
+          : null,
+    startedAt:
+      ts(o.start_time) ??
+      ts(o.started_at) ??
+      ts(o.start_time_ms) ??
+      null,
+    activeAgents: typeof o.active_agents === "number" ? o.active_agents : null,
   };
+}
+
+/** Read the gateway state; null when missing/unreadable/unknown shape. */
+function readGateway(home: string): GatewayStatus | null {
+  try {
+    return parseGatewayJson(fs.readFileSync(gatewayStatePath(home), "utf8"));
+  } catch {
+    return null;
+  }
 }
 
 function readRoster(home: string): HermesRoster {
@@ -272,10 +353,23 @@ export async function fetchSqliteSnapshot(home: string): Promise<HermesSnapshot>
   }
   const { tasks, runs } = readKanban(home, degradations);
   let gateway: GatewayStatus = { running: false };
-  try {
-    gateway = readGateway(home);
-  } catch {
-    degradations.push("gateway_state.json unreadable — gateway shown offline");
+  const gw = readGateway(home);
+  if (gw) {
+    gateway = gw;
+  } else {
+    // No usable gateway file: a headless `hermes serve` writes a spawn ledger
+    // instead — if it lists a serve process, treat the gateway as up.
+    const ep = discoverServeEndpoint(home);
+    if (ep) {
+      gateway = { running: true };
+      degradations.push(
+        `gateway_state.json missing/unrecognized — gateway inferred from spawn-ledger.json (port ${ep.port})`,
+      );
+    } else {
+      degradations.push(
+        `gateway_state.json not found under ${home} and no serve process in spawn-ledger.json — gateway shown offline`,
+      );
+    }
   }
   const roster = readRoster(home);
   return {

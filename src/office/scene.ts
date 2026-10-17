@@ -247,6 +247,20 @@ export class OfficeScene {
     }
   }
 
+  /** Align the boss with the actual gateway state (no event required). */
+  setGateway(running: boolean): void {
+    if (running === this.gatewayRunning) return;
+    this.gatewayRunning = running;
+    this.bossVisible = running;
+    if (running) {
+      this.goTo(this.boss, BOSS_SEAT.x, BOSS_SEAT.y);
+      this.boss.activity = "walk";
+    } else {
+      this.goTo(this.boss, ZONES.coffee.x, ZONES.coffee.y);
+      this.boss.activity = "walk";
+    }
+  }
+
   /** Consume office events: bubbles, paper errands, boss reactions. */
   handleEvents(events: OfficeEvent[], now: number): void {
     for (const ev of events) {

@@ -11,12 +11,13 @@ interface Props {
   events: OfficeEvent[];
   selectedId: string | null;
   onSelect: (id: string | null) => void;
+  gatewayRunning: boolean;
 }
 
 const WORLD_W = MAP_W * TILE;
 const WORLD_H = MAP_H * TILE;
 
-export default function OfficeCanvas({ bots, events, selectedId, onSelect }: Props) {
+export default function OfficeCanvas({ bots, events, selectedId, onSelect, gatewayRunning }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const sceneRef = useRef<OfficeScene | null>(null);
   const seenEvents = useRef<Set<number>>(new Set());
@@ -66,6 +67,10 @@ export default function OfficeCanvas({ bots, events, selectedId, onSelect }: Pro
   useEffect(() => {
     if (sceneRef.current) sceneRef.current.selectedId = selectedId;
   }, [selectedId]);
+
+  useEffect(() => {
+    sceneRef.current?.setGateway(gatewayRunning);
+  }, [gatewayRunning]);
 
   const pickAt = (clientX: number, clientY: number): string | null => {
     const canvas = canvasRef.current;
