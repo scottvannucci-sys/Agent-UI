@@ -13,7 +13,8 @@ import os from "node:os";
  *  5. ~/.hermes
  *  6. ~/Library/Application Support/hermes           (macOS)
  */
-export function findHermesHome(): string | null {
+/** All locations considered for the Hermes home, in priority order. */
+export function hermesHomeCandidates(): string[] {
   const candidates: string[] = [];
   if (process.env.AGENT_UI_HERMES_HOME) candidates.push(process.env.AGENT_UI_HERMES_HOME);
   const localAppData = process.env.LOCALAPPDATA;
@@ -30,7 +31,11 @@ export function findHermesHome(): string | null {
   candidates.push(
     path.join(os.homedir(), "Library", "Application Support", "hermes"),
   );
-  for (const c of candidates) {
+  return candidates;
+}
+
+export function findHermesHome(): string | null {
+  for (const c of hermesHomeCandidates()) {
     if (fs.existsSync(c)) return c;
   }
   return null;

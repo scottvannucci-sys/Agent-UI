@@ -1,5 +1,5 @@
 import { deriveEvents } from "./derive";
-import { findHermesHome } from "./paths";
+import { findHermesHome, hermesHomeCandidates } from "./paths";
 import { fetchHttpSnapshot } from "./sources/http";
 import { fetchMockSnapshot } from "./sources/mock";
 import { fetchSqliteSnapshot } from "./sources/sqlite";
@@ -84,8 +84,8 @@ function pollMs(): number {
 async function fetchOnce(s: Store): Promise<void> {
   const mode = sourceMode();
   const tried: string[] = [];
+  const errors: string[] = [];
   let snap: HermesSnapshot | null = null;
-  let lastErr: string | null = null;
 
   const home = findHermesHome();
 
@@ -99,11 +99,14 @@ async function fetchOnce(s: Store): Promise<void> {
           snap = await fetchSqliteSnapshot(home);
           tried.push(`sqlite:${home}`);
         } catch (e) {
-          lastErr = `sqlite: ${String(e).slice(0, 120)}`;
+          errors.push(`sqlite(${home}): ${String(e).slice(0, 120)}`);
           tried.push("sqlite:failed");
         }
       } else {
         tried.push("sqlite:no-hermes-home");
+        errors.push(
+          `no Hermes data directory found (checked: ${hermesHomeCandidates().join(", ")}) — set AGENT_UI_HERMES_HOME to the folder containing state.db/kanban.db`,
+        );
       }
     }
     if (!snap && (mode === "auto" || mode === "http")) {
@@ -111,15 +114,18 @@ async function fetchOnce(s: Store): Promise<void> {
         snap = await fetchHttpSnapshot();
         tried.push("http");
       } catch (e) {
-        lastErr = `http: ${String(e).slice(0, 120)}`;
+        errors.push(`http: ${String(e).slice(0, 120)}`);
         tried.push("http:failed");
       }
     }
     if (!snap) {
       snap = await fetchMockSnapshot();
       tried.push("mock(fallback)");
-      if (lastErr) snap.degradations.unshift(`Live sources unavailable (${lastErr}) — demo mode active`);
-      else snap.degradations.unshift("No live Hermes source found — demo mode active");
+      if (errors.length) {
+        snap.degradations.unshift(`Live sources unavailable (${errors.join(" · ")}) — demo mode active`);
+      } else {
+        snap.degradations.unshift("No live Hermes source found — demo mode active");
+      }
     }
   }
 
