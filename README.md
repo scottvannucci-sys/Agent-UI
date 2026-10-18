@@ -146,6 +146,10 @@ tools/
   after dark), ceiling fixtures cast warm light pools that strengthen in the
   evening, a wall clock shows the real time, and the whole office picks up a
   subtle after-hours tint. `/api/preview?hour=23` renders any time of day.
+- **Weather** — the date picks clear, rainy, or snowy skies (snow is
+  winter-only): rain grays the skyline with falling streaks in every window
+  and the boss's glass wall, snow pales it with drifting flakes, and stars
+  only come out on clear nights. `/api/preview?weather=rain` pins it.
 - **Character life** — every bot gets a 1px silhouette outline, blinks on its
   own phase, talks (mouth animation) while a speech bubble is up, leans its
   pupils toward its walking direction, and cups a coffee at the machine.

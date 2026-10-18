@@ -108,6 +108,8 @@ export class OfficeScene {
   hoverId: string | null = null;
   /** Pin the time-of-day phase (0-24) for deterministic renders; null = real clock. */
   fixedDayPhase: number | null = null;
+  /** Pin the weather for deterministic renders; null = derive from the date. */
+  fixedWeather: "clear" | "rain" | "snow" | null = null;
   private entities = new Map<string, Entity>();
   private deskOwner = new Map<number, string>(); // deskIdx -> botId
   private activeDesks = new Set<string>();
@@ -118,6 +120,7 @@ export class OfficeScene {
   private _night = 0;
   private _sky = "#aee0ef";
   private _skyBand = "#8fc4dc";
+  private _weather: "clear" | "rain" | "snow" = "clear";
 
   constructor() {
     this.boss = {
@@ -472,6 +475,20 @@ export class OfficeScene {
     return d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600;
   }
 
+  /** Day-derived weather: snow in winter, rain now and then, else clear. */
+  private weatherFor(now: number): "clear" | "rain" | "snow" {
+    if (this.fixedWeather) return this.fixedWeather;
+    const d = new Date(now);
+    const doy = Math.floor(
+      (d.getTime() - new Date(d.getFullYear(), 0, 0).getTime()) / 86_400_000,
+    );
+    const h = (d.getFullYear() * 373 + doy * 97) % 100;
+    const winter = d.getMonth() === 11 || d.getMonth() <= 1;
+    if (winter && h < 30) return "snow";
+    if (h < 22) return "rain";
+    return "clear";
+  }
+
   private computeDaylight(now: number): void {
     const phase = this.dayPhase(now);
     let nf: number;
@@ -482,13 +499,25 @@ export class OfficeScene {
     this._night = Math.max(0, Math.min(1, nf));
     // warm amber push at dawn/dusk only (zero at full day and full night)
     const duskMix = Math.max(0, 1 - 2 * Math.abs(this._night - 0.5)) * 0.55;
-    this._sky = lerpHex(lerpHex("#aee0ef", "#16233f", this._night), "#f2a65e", duskMix);
-    this._skyBand = lerpHex(lerpHex("#8fc4dc", "#0d1526", this._night), "#f7c37a", duskMix * 0.5);
+    this._weather = this.weatherFor(now);
+    let sky = lerpHex(lerpHex("#aee0ef", "#16233f", this._night), "#f2a65e", duskMix);
+    let band = lerpHex(lerpHex("#8fc4dc", "#0d1526", this._night), "#f7c37a", duskMix * 0.5);
+    // rain grays the sky, snow pales it (less effect at night)
+    const wx = this._night > 0.5 ? 0.25 : 0.45;
+    if (this._weather === "rain") {
+      sky = lerpHex(sky, "#7e8b98", wx);
+      band = lerpHex(band, "#6e7b88", wx);
+    } else if (this._weather === "snow") {
+      sky = lerpHex(sky, "#c2cdd8", wx * 0.8);
+      band = lerpHex(band, "#b6c1cc", wx * 0.8);
+    }
+    this._sky = sky;
+    this._skyBand = band;
   }
 
   draw(t: PixelTarget, now: number): void {
     this.computeDaylight(now);
-    this.drawFloor(t);
+    this.drawFloor(t, now);
     this.drawWallDecor(t, now);
     this.drawLightPools(t, now);
     // furniture back-to-front
@@ -514,14 +543,14 @@ export class OfficeScene {
 
   /* ---------------- floor ---------------- */
 
-  private drawFloor(t: PixelTarget): void {
+  private drawFloor(t: PixelTarget, now: number): void {
     for (let y = 0; y < MAP_H; y++) {
       for (let x = 0; x < MAP_W; x++) {
         const px = x * TILE;
         const py = y * TILE;
         if (isWall(x, y)) {
           this.drawWall(t, x, y, px, py);
-          if (MAP[y][x] === "w") this.drawWindow(t, px, py);
+          if (MAP[y][x] === "w") this.drawWindow(t, px, py, now);
         } else if (isTileFloor(x, y)) {
           const alt = (x + y) % 2 === 0;
           t.rect(px, py, TILE, TILE, alt ? C.tile : C.tileAlt);
@@ -539,7 +568,7 @@ export class OfficeScene {
         }
         // boss office glass wall (south wall of the office, skip door x5)
         if (y === 6 && x >= 1 && x <= 9 && x !== 5) {
-          this.drawGlassWall(t, px, py);
+          this.drawGlassWall(t, px, py, now);
         }
         if (isDoor(x, y)) {
           t.rect(px, py, TILE, TILE, C.tile);
@@ -570,7 +599,7 @@ export class OfficeScene {
     }
   }
 
-  private drawWindow(t: PixelTarget, px: number, py: number): void {
+  private drawWindow(t: PixelTarget, px: number, py: number, now: number): void {
     const wx = px + 4;
     const wy = py + 6;
     const ww = TILE - 8;
@@ -579,7 +608,7 @@ export class OfficeScene {
     t.rect(wx, wy, ww, wh, this._sky);
     t.rect(wx, wy, ww, Math.max(3, Math.floor(wh / 3)), this._skyBand);
     // stars after dark — placed inside the panes, never on the frame cross
-    if (this._night > 0.55) {
+    if (this._night > 0.55 && this._weather === "clear") {
       const a = Math.min(1, (this._night - 0.55) / 0.45);
       for (let i = 0; i < 4; i++) {
         const col = 1 + ((px * 7 + py * 3 + i * 5) % (ww - 3));
@@ -587,6 +616,20 @@ export class OfficeScene {
         const row = 1 + ((px * 3 + py * 11 + i * 7) % (wh - 3));
         const syy = wy + (row >= Math.floor(wh / 2) ? row + 1 : row);
         t.rect(sxx, syy, 1, 1, `rgba(255,255,255,${(0.85 * a).toFixed(2)})`);
+      }
+    }
+    // weather behind the glass: falling streaks or drifting flakes
+    for (let i = 0; i < 5; i++) {
+      if (this._weather === "rain") {
+        const rx = wx + 1 + ((px * 7 + py * 3 + i * 5 + Math.floor(now / 70)) % (ww - 2));
+        const ry = wy + ((px * 3 + py * 11 + i * 9 + Math.floor(now / 50)) % (wh - 3));
+        const rh = Math.max(1, Math.min(3, wy + wh - ry));
+        t.rect(rx, ry, 1, rh, "rgba(205,225,240,0.55)");
+      } else if (this._weather === "snow") {
+        const fx0 = wx + 1 + ((px * 5 + py * 7 + i * 3 + Math.floor(now / 800)) % (ww - 1));
+        const fx = Math.max(wx, Math.min(wx + ww - 1, fx0 + (Math.floor(now / 350 + i * 2) % 3) - 1));
+        const fy = wy + ((px * 11 + py * 5 + i * 7 + Math.floor(now / 110)) % (wh - 1));
+        t.rect(fx, fy, 1, 1, "rgba(255,255,255,0.9)");
       }
     }
     // frame + cross
@@ -603,7 +646,7 @@ export class OfficeScene {
     t.rect(px + 3, wy + wh + 1, TILE - 6, 2, C.wallShade);
   }
 
-  private drawGlassWall(t: PixelTarget, px: number, py: number): void {
+  private drawGlassWall(t: PixelTarget, px: number, py: number, now: number): void {
     const gx = px + 1;
     const gy = py + 3;
     const gw = TILE - 2;
@@ -614,11 +657,25 @@ export class OfficeScene {
     t.rect(gx + gw, gy, 1, gh, C.windowFrame);
     t.rect(gx, gy, gw, gh, this._sky);
     t.rect(gx, gy, gw, 4, this._skyBand);
-    if (this._night > 0.55) {
+    if (this._night > 0.55 && this._weather === "clear") {
       const a = Math.min(1, (this._night - 0.55) / 0.45);
       t.rect(gx + 5, gy + 3, 1, 1, `rgba(255,255,255,${(0.8 * a).toFixed(2)})`);
       t.rect(gx + gw - 7, gy + 6, 1, 1, `rgba(255,255,255,${(0.7 * a).toFixed(2)})`);
       t.rect(gx + 12, gy + gh - 8, 1, 1, `rgba(255,255,255,${(0.75 * a).toFixed(2)})`);
+    }
+    // weather behind the glass
+    for (let i = 0; i < 6; i++) {
+      if (this._weather === "rain") {
+        const rx = gx + 1 + ((px * 7 + py * 3 + i * 5 + Math.floor(now / 70)) % (gw - 2));
+        const ry = gy + ((px * 3 + py * 11 + i * 9 + Math.floor(now / 50)) % (gh - 3));
+        const rh = Math.max(1, Math.min(3, gy + gh - ry));
+        t.rect(rx, ry, 1, rh, "rgba(205,225,240,0.55)");
+      } else if (this._weather === "snow") {
+        const fx0 = gx + 1 + ((px * 5 + py * 7 + i * 3 + Math.floor(now / 800)) % (gw - 1));
+        const fx = Math.max(gx, Math.min(gx + gw - 1, fx0 + (Math.floor(now / 350 + i * 2) % 3) - 1));
+        const fy = gy + ((px * 11 + py * 5 + i * 7 + Math.floor(now / 110)) % (gh - 1));
+        t.rect(fx, fy, 1, 1, "rgba(255,255,255,0.9)");
+      }
     }
     // reflection diagonal
     t.rect(gx + 4, gy + 3, 3, 1, "rgba(255,255,255,0.35)");
