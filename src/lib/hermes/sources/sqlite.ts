@@ -1,9 +1,12 @@
 import fs from "node:fs";
+import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import {
   botRosterPath,
   discoverServeEndpoint,
   gatewayStatePath,
+  kanbanBoardDbPath,
+  kanbanBoardsDir,
   kanbanDbPath,
   stateDbPath,
 } from "../paths";
@@ -161,69 +164,136 @@ function readRecentMessages(db: DatabaseSync): HermesMessage[] {
   return latest.map(mapMessage);
 }
 
+interface BoardInfo {
+  slug: string;
+  name: string;
+  dbPath: string;
+}
+
+/**
+ * Enumerate kanban boards: the default board's DB lives at <home>/kanban.db
+ * (back-compat) and named boards at <home>/kanban/boards/<slug>/kanban.db,
+ * with display metadata in board.json (Hermes ≥ boards support).
+ */
+function listBoards(home: string): BoardInfo[] {
+  const boards: BoardInfo[] = [{ slug: "default", name: "Default", dbPath: kanbanDbPath(home) }];
+  try {
+    const root = kanbanBoardsDir(home);
+    if (!fs.existsSync(root)) return boards;
+    for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+      if (!entry.isDirectory() || entry.name.startsWith("_")) continue; // skip _archived
+      const dbPath = kanbanBoardDbPath(home, entry.name);
+      if (!fs.existsSync(dbPath)) continue; // metadata-only / no tasks yet
+      let name = entry.name;
+      try {
+        const meta = JSON.parse(
+          fs.readFileSync(path.join(root, entry.name, "board.json"), "utf8"),
+        ) as { name?: string };
+        if (meta.name) name = meta.name;
+      } catch {
+        /* slug as name */
+      }
+      boards.push({ slug: entry.name, name, dbPath });
+    }
+  } catch {
+    /* best effort — default board still works */
+  }
+  return boards;
+}
+
 function readKanban(home: string, deg: string[]): { tasks: HermesTask[]; runs: HermesTaskRun[] } {
-  const db = openReadOnly(kanbanDbPath(home));
-  if (!db) {
+  // Optional filter: comma-separated board slugs (default = all boards).
+  const filter = (process.env.AGENT_UI_KANBAN_BOARDS ?? "")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  let boards = listBoards(home);
+  if (filter.length) boards = boards.filter((b) => filter.includes(b.slug));
+
+  const tasks: HermesTask[] = [];
+  const runs: HermesTaskRun[] = [];
+  let opened = 0;
+
+  for (const b of boards) {
+    if (!fs.existsSync(b.dbPath)) continue;
+    const db = openReadOnly(b.dbPath);
+    if (!db) {
+      deg.push(`kanban board "${b.slug}" unreadable`);
+      continue;
+    }
+    opened++;
+    try {
+      const trows = db
+        .prepare(
+          `select id, title, status, assignee, priority, created_at, branch_name, workspace_path
+           from tasks order by created_at desc limit 60`,
+        )
+        .all() as unknown as Array<{
+        id: string;
+        title: string;
+        status: string;
+        assignee: string | null;
+        priority: number | null;
+        created_at: number;
+        branch_name: string | null;
+        workspace_path: string | null;
+      }>;
+      for (const t of trows) {
+        tasks.push({
+          id: t.id,
+          title: t.title,
+          status: t.status,
+          assignee: t.assignee,
+          priority: t.priority ?? 0,
+          createdAt: t.created_at,
+          branchName: t.branch_name,
+          workspacePath: t.workspace_path,
+          board: b.slug === "default" ? undefined : b.slug,
+          boardName: b.slug === "default" ? undefined : b.name,
+        });
+      }
+      const rrows = db
+        .prepare(
+          `select id, task_id, status, outcome, profile, started_at, ended_at, last_heartbeat_at
+           from task_runs order by id desc limit 60`,
+        )
+        .all() as unknown as Array<{
+        id: number;
+        task_id: string;
+        status: string;
+        outcome: string | null;
+        profile: string | null;
+        started_at: number;
+        ended_at: number | null;
+        last_heartbeat_at: number | null;
+      }>;
+      for (const r of rrows) {
+        runs.push({
+          id: r.id,
+          taskId: r.task_id,
+          status: r.status,
+          outcome: r.outcome,
+          profile: r.profile,
+          startedAt: r.started_at,
+          endedAt: r.ended_at,
+          board: b.slug === "default" ? undefined : b.slug,
+          lastHeartbeatAt: r.last_heartbeat_at,
+        });
+      }
+    } catch (e) {
+      deg.push(`kanban board "${b.slug}": ${String(e).slice(0, 60)}`);
+    } finally {
+      db.close();
+    }
+  }
+
+  if (!opened) {
     deg.push("kanban.db not found — work orders unavailable");
     return { tasks: [], runs: [] };
   }
-  try {
-    const tasks = db
-      .prepare(
-        `select id, title, status, assignee, priority, created_at, branch_name, workspace_path
-         from tasks order by created_at desc limit 60`,
-      )
-      .all() as unknown as Array<{
-      id: string;
-      title: string;
-      status: string;
-      assignee: string | null;
-      priority: number | null;
-      created_at: number;
-      branch_name: string | null;
-      workspace_path: string | null;
-    }>;
-    const runs = db
-      .prepare(
-        `select id, task_id, status, outcome, profile, started_at, ended_at
-         from task_runs order by id desc limit 60`,
-      )
-      .all() as unknown as Array<{
-      id: number;
-      task_id: string;
-      status: string;
-      outcome: string | null;
-      profile: string | null;
-      started_at: number;
-      ended_at: number | null;
-    }>;
-    return {
-      tasks: tasks.map((t) => ({
-        id: t.id,
-        title: t.title,
-        status: t.status,
-        assignee: t.assignee,
-        priority: t.priority ?? 0,
-        createdAt: t.created_at,
-        branchName: t.branch_name,
-        workspacePath: t.workspace_path,
-      })),
-      runs: runs.map((r) => ({
-        id: r.id,
-        taskId: r.task_id,
-        status: r.status,
-        outcome: r.outcome,
-        profile: r.profile,
-        startedAt: r.started_at,
-        endedAt: r.ended_at,
-      })),
-    };
-  } catch (e) {
-    deg.push(`kanban.db unreadable: ${String(e).slice(0, 80)}`);
-    return { tasks: [], runs: [] };
-  } finally {
-    db.close();
-  }
+  tasks.sort((a, b) => b.createdAt - a.createdAt);
+  runs.sort((a, b) => b.id - a.id);
+  return { tasks: tasks.slice(0, 120), runs: runs.slice(0, 120) };
 }
 
 const GATEWAY_RUNNING_WORDS = new Set([

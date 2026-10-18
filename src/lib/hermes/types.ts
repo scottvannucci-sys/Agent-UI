@@ -41,22 +41,29 @@ export interface HermesMessage {
 export interface HermesTask {
   id: string;
   title: string;
-  status: string; // todo | triage | in_progress | blocked | done ...
+  status: string; // triage | todo | scheduled | ready | running | blocked | review | done | archived
   assignee: string | null;
   priority: number;
   createdAt: number;
   branchName: string | null;
   workspacePath: string | null;
+  /** Board slug this task lives on (undefined = default board). */
+  board?: string;
+  /** Display name of the board when it differs from the slug. */
+  boardName?: string;
 }
 
 export interface HermesTaskRun {
   id: number;
   taskId: string;
-  status: string; // running | done | blocked | crashed | timed_out | failed | released
-  outcome: string | null; // completed | blocked | crashed | timed_out | ...
+  status: string; // running | completed | crashed | timed_out | failed | released ...
+  outcome: string | null; // completed | blocked | review_requested | ...
   profile: string | null;
   startedAt: number;
   endedAt: number | null;
+  /** Board slug (undefined = default board). */
+  board?: string;
+  lastHeartbeatAt?: number | null;
 }
 
 export interface GatewayPlatformState {

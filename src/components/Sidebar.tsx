@@ -28,12 +28,28 @@ export default function Sidebar({ snapshot, feed, bots, selectedId, onSelect }: 
 
   const runsByTask = new Map<string, HermesTaskRun[]>();
   for (const r of snapshot?.runs ?? []) {
-    const arr = runsByTask.get(r.taskId) ?? [];
+    const key = `${r.board ?? "default"}:${r.taskId}`;
+    const arr = runsByTask.get(key) ?? [];
     arr.push(r);
-    runsByTask.set(r.taskId, arr);
+    runsByTask.set(key, arr);
   }
   const tasks = [...(snapshot?.tasks ?? [])].sort((a, b) => {
-    const rank = (s: string) => (s === "in_progress" ? 0 : s === "todo" ? 1 : s === "blocked" ? 2 : 3);
+    // real Hermes kanban statuses, active first
+    const order = [
+      "running",
+      "ready",
+      "todo",
+      "triage",
+      "scheduled",
+      "blocked",
+      "review",
+      "done",
+      "archived",
+    ];
+    const rank = (s: string) => {
+      const i = order.indexOf(s);
+      return i === -1 ? order.length : i;
+    };
     return rank(a.status) - rank(b.status) || b.createdAt - a.createdAt;
   });
 
@@ -81,10 +97,10 @@ export default function Sidebar({ snapshot, feed, bots, selectedId, onSelect }: 
               </div>
             )}
             {tasks.map((t) => {
-              const runs = runsByTask.get(t.id) ?? [];
-              const running = runs.find((r) => r.status === "running");
+              const runs = runsByTask.get(`${t.board ?? "default"}:${t.id}`) ?? [];
+              const running = runs.find((r) => r.status === "running" && !r.endedAt);
               return (
-                <div key={t.id} className="task-card">
+                <div key={`${t.board ?? "default"}:${t.id}`} className="task-card">
                   <div className="row">
                     <span className="who" style={{ color: "var(--navy)" }}>
                       {t.title}
@@ -92,7 +108,10 @@ export default function Sidebar({ snapshot, feed, bots, selectedId, onSelect }: 
                     <span className={`badge ${t.status}`}>{t.status}</span>
                   </div>
                   <div className="row" style={{ marginTop: 4, fontSize: 15, color: "var(--ink-soft)" }}>
-                    <span>{t.assignee ? `→ ${t.assignee}` : "unassigned"}</span>
+                    <span>
+                      {t.assignee ? `→ ${t.assignee}` : "unassigned"}
+                      {t.board ? ` · ${t.boardName ?? t.board}` : ""}
+                    </span>
                     {running && <span className="badge running">run #{running.id} live</span>}
                   </div>
                 </div>

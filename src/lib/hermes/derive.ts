@@ -142,6 +142,11 @@ export function bubbleTextForMessage(m: HermesMessage): string {
 /* snapshot diffing → events                                           */
 /* ------------------------------------------------------------------ */
 
+/** Cross-board composite key — Hermes task ids are only unique per board. */
+function taskKey(board: string | undefined, id: string | number): string {
+  return `${board ?? "default"}:${id}`;
+}
+
 export function deriveEvents(prev: HermesSnapshot | null, next: HermesSnapshot): OfficeEvent[] {
   const events: OfficeEvent[] = [];
   const ts = next.fetchedAt;
@@ -150,8 +155,8 @@ export function deriveEvents(prev: HermesSnapshot | null, next: HermesSnapshot):
   if (prev) {
     const prevSessionIds = new Set(prev.sessions.map((s) => s.id));
     const prevMsgIds = new Set(prev.recentMessages.map((m) => m.id));
-    const prevTasks = new Map(prev.tasks.map((t) => [t.id, t]));
-    const prevRuns = new Map(prev.runs.map((r) => [r.id, r]));
+    const prevTasks = new Map(prev.tasks.map((t) => [taskKey(t.board, t.id), t]));
+    const prevRuns = new Map(prev.runs.map((r) => [taskKey(r.board, r.id), r]));
 
     for (const s of next.sessions) {
       if (!prevSessionIds.has(s.id)) {
@@ -188,34 +193,34 @@ export function deriveEvents(prev: HermesSnapshot | null, next: HermesSnapshot):
       });
     }
     for (const t of next.tasks) {
-      const was = prevTasks.get(t.id);
+      const was = prevTasks.get(taskKey(t.board, t.id));
       if (!was) {
         events.push({
           id: idBase++,
           type: "task_created",
           ts,
-          taskId: t.id,
-          text: `New work order: ${t.title}`,
+          taskId: taskKey(t.board, t.id),
+          text: `New work order: ${t.title}${t.board ? ` (${t.board})` : ""}`,
         });
       } else if (was.status !== t.status) {
         events.push({
           id: idBase++,
           type: "task_status",
           ts,
-          taskId: t.id,
+          taskId: taskKey(t.board, t.id),
           text: `${t.title}: ${was.status} → ${t.status}`,
         });
       }
     }
     for (const r of next.runs) {
-      const was = prevRuns.get(r.id);
+      const was = prevRuns.get(taskKey(r.board, r.id));
       if (!was || was.status !== r.status || was.outcome !== r.outcome) {
         events.push({
           id: idBase++,
           type: "run_update",
           ts,
-          taskId: r.taskId,
-          text: `Run #${r.id} ${r.status}${r.outcome ? ` (${r.outcome})` : ""}`,
+          taskId: taskKey(r.board, r.taskId),
+          text: `Run #${r.id} ${r.status}${r.outcome ? ` (${r.outcome})` : ""}${r.board ? ` on ${r.board}` : ""}`,
         });
       }
     }
@@ -251,19 +256,29 @@ export function deriveBots(snapshot: HermesSnapshot): BotSpec[] {
     if (t) latestText.set(m.sessionId, t);
   }
 
-  // running runs → session-ish worker ids via task assignee matching later
-  const runningRuns = new Map<string, HermesTaskRun>();
+  // Running work → per-task composite keys. A "running" run with no heartbeat
+  // for 6h is a zombie (worker died mid-task) and doesn't count as working.
+  const runningRuns = new Set<string>();
   for (const r of snapshot.runs) {
-    if (r.status === "running") runningRuns.set(r.taskId, r);
+    if (r.status !== "running" || r.endedAt) continue;
+    const lastSign = r.lastHeartbeatAt ?? r.startedAt;
+    if (lastSign && now - lastSign > 6 * 3600) continue;
+    runningRuns.add(taskKey(r.board, r.taskId));
   }
+  // A task whose *status* is running counts even without a fresh run row.
+  const tasksWithRunningStatus = new Set(
+    snapshot.tasks.filter((t) => t.status === "running").map((t) => taskKey(t.board, t.id)),
+  );
+  const isTaskWorking = (t: HermesTask): boolean =>
+    tasksWithRunningStatus.has(taskKey(t.board, t.id)) || runningRuns.has(taskKey(t.board, t.id));
+
   const taskByAssignee = new Map<string, string[]>();
   for (const t of snapshot.tasks) {
     if (!t.assignee) continue;
     const arr = taskByAssignee.get(t.assignee.toLowerCase()) ?? [];
-    arr.push(t.id);
+    arr.push(taskKey(t.board, t.id));
     taskByAssignee.set(t.assignee.toLowerCase(), arr);
   }
-  const tasksWithRunningRun = new Set(runningRuns.keys());
 
   const bots: BotSpec[] = snapshot.sessions.map((s) => {
     const name = displayNameForSession(s);
@@ -304,29 +319,43 @@ export function deriveBots(snapshot: HermesSnapshot): BotSpec[] {
     };
   });
 
-  // kanban workers (bot-mode agents) that have no session become bots too
+  // kanban workers with no session become bots too — one bot per assignee,
+  // across all boards. Recency follows their newest task so stale queues
+  // don't keep zombie employees in the office.
   const knownNames = new Set(bots.map((b) => b.name.toLowerCase()));
+  const kanbanByAssignee = new Map<
+    string,
+    { newest: HermesTask; running: boolean; count: number }
+  >();
   for (const t of snapshot.tasks) {
     if (!t.assignee) continue;
     const key = t.assignee.toLowerCase();
-    if (!knownNames.has(key)) {
-      const seed = hashString(t.assignee);
-      const dept = deptFor(seed);
-      const isRunning = tasksWithRunningRun.has(t.id);
-      bots.push({
-        id: `kanban:${t.id}`,
-        name: t.assignee,
-        role: roleFor(dept),
-        dept,
-        status: isRunning ? "working" : "idle",
-        statusText: isRunning ? `Working: ${t.title}` : "Awaiting dispatch",
-        paletteSeed: seed,
-        taskIds: [t.id],
-        spawnTs: t.createdAt,
-        lastActivityAt: now,
-      });
-      knownNames.add(key);
-    }
+    const agg = kanbanByAssignee.get(key) ?? { newest: t, running: false, count: 0 };
+    agg.count++;
+    if (t.createdAt > agg.newest.createdAt) agg.newest = t;
+    if (isTaskWorking(t)) agg.running = true;
+    kanbanByAssignee.set(key, agg);
+  }
+  for (const [key, agg] of kanbanByAssignee) {
+    if (knownNames.has(key)) continue;
+    const t = agg.newest;
+    const seed = hashString(t.assignee!);
+    const dept = deptFor(seed);
+    bots.push({
+      id: `kanban:${key}`,
+      name: t.assignee!,
+      role: roleFor(dept),
+      dept,
+      status: agg.running ? "working" : "idle",
+      statusText: agg.running
+        ? `Working: ${t.title}${agg.count > 1 ? ` (+${agg.count - 1} more)` : ""}`
+        : "Awaiting dispatch",
+      paletteSeed: seed,
+      taskIds: [],
+      spawnTs: t.createdAt,
+      lastActivityAt: agg.running ? now : t.createdAt,
+    });
+    knownNames.add(key);
   }
   for (const a of snapshot.roster.agents) {
     const key = a.toLowerCase();
@@ -354,8 +383,10 @@ export function deriveBots(snapshot: HermesSnapshot): BotSpec[] {
     if (!t.assignee) continue;
     const assigneeKey = t.assignee.toLowerCase();
     const b = bots.find((x) => x.name.toLowerCase() === assigneeKey);
-    if (b && !b.taskIds.includes(t.id)) b.taskIds.push(t.id);
-    if (b && tasksWithRunningRun.has(t.id) && b.status !== "working") b.status = "working";
+    if (b && !b.taskIds.includes(taskKey(t.board, t.id))) {
+      b.taskIds.push(taskKey(t.board, t.id));
+    }
+    if (b && isTaskWorking(t) && b.status !== "working") b.status = "working";
   }
 
   // crashed runs → stuck status

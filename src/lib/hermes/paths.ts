@@ -62,6 +62,18 @@ export function kanbanDbPath(home: string): string {
   return path.join(home, "kanban.db");
 }
 
+/** Root of the additional named kanban boards: <home>/kanban/boards. */
+export function kanbanBoardsDir(home: string): string {
+  return path.join(home, "kanban", "boards");
+}
+
+/** kanban.db for a board: the default board lives at <home>/kanban.db (back-compat). */
+export function kanbanBoardDbPath(home: string, slug: string): string {
+  return slug === "default"
+    ? path.join(home, "kanban.db")
+    : path.join(kanbanBoardsDir(home), slug, "kanban.db");
+}
+
 export function gatewayStatePath(home: string): string {
   return path.join(home, "gateway_state.json");
 }

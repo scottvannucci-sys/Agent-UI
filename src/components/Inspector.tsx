@@ -79,8 +79,10 @@ export default function Inspector({ bot, snapshot, onClose }: Props) {
               <dd>
                 <ul style={{ margin: 0, paddingLeft: 16 }}>
                   {tasks.map((t) => (
-                    <li key={t.id}>
-                      {t.title} <span className={`badge ${t.status}`}>{t.status}</span>
+                    <li key={`${t.board ?? "default"}:${t.id}`}>
+                      {t.title}
+                      {t.board ? <span className="board-tag">{t.boardName ?? t.board}</span> : null}{" "}
+                      <span className={`badge ${t.status}`}>{t.status}</span>
                     </li>
                   ))}
                 </ul>
