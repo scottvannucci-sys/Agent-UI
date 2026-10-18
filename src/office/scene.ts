@@ -110,6 +110,8 @@ export class OfficeScene {
   fixedDayPhase: number | null = null;
   /** Pin the weather for deterministic renders; null = derive from the date. */
   fixedWeather: "clear" | "rain" | "snow" | null = null;
+  /** CRT scanline overlay (GUI toggle or ?scanlines=1). */
+  scanlines = false;
   private entities = new Map<string, Entity>();
   private deskOwner = new Map<number, string>(); // deskIdx -> botId
   private activeDesks = new Set<string>();
@@ -537,8 +539,36 @@ export class OfficeScene {
     const na = this._night * 0.16;
     if (na > 0.01) t.rect(0, 0, MAP_W * TILE, MAP_H * TILE, `rgba(14,20,44,${na.toFixed(3)})`);
 
+    // screens become the main light source after dark
+    this.drawScreenGlow(t);
+
     // bubbles last
     for (const e of ents) if (e.bubble) this.drawBubble(t, e);
+
+    // CRT scanlines over everything
+    if (this.scanlines) {
+      for (let y = 1; y < MAP_H * TILE; y += 2) {
+        t.rect(0, y, MAP_W * TILE, 1, "rgba(8,10,16,0.14)");
+      }
+    }
+  }
+
+  /** Screens light up their desks after dark: halo on the bezel, pool on the
+   * desktop, and a spill onto the sitter's face. */
+  private drawScreenGlow(t: PixelTarget): void {
+    const g = this._night;
+    if (g < 0.25) return;
+    for (const key of this.activeDesks) {
+      const [dx, dy] = key.split(",").map(Number);
+      const px = dx * TILE;
+      const py = dy * TILE;
+      // halo rim around the monitor bezel (bezel x6-25, rows 1-14)
+      t.rect(px + 4, py + 1, TILE - 8, 14, `rgba(159,216,232,${(0.1 * g).toFixed(3)})`);
+      // pool on the desktop
+      t.rect(px + 2, py + 13, TILE - 4, 4, `rgba(159,216,232,${(0.16 * g).toFixed(3)})`);
+      // spill south onto the seat tile (sitter's head area)
+      t.rect(px + 4, py + TILE, TILE - 8, 6, `rgba(159,216,232,${(0.07 * g).toFixed(3)})`);
+    }
   }
 
   /* ---------------- floor ---------------- */

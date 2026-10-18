@@ -153,6 +153,11 @@ tools/
 - **Character life** — every bot gets a 1px silhouette outline, blinks on its
   own phase, talks (mouth animation) while a speech bubble is up, leans its
   pupils toward its walking direction, and cups a coffee at the machine.
+- **After dark** — screens become the office's main light source: typing
+  desks get a cool glow pool on the desktop, a halo around the bezel, and
+  a spill onto the sitter. A **CRT toggle** (button on the frame, or
+  `/api/preview?scanlines=1`) adds scanline overlay for the full 2am
+  terminal-room vibe.
 - **Set dressing** — deterministic desk props (sticky notes, desk plants,
   photo frames), a microwave in the kitchen, the Dundie award on the shelf,
   Employee-of-the-Month portraits, a motivational poster, a wet-floor sign,

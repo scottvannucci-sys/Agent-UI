@@ -30,6 +30,11 @@ export default function OfficeCanvas({
   const sceneRef = useRef<OfficeScene | null>(null);
   const seenEvents = useRef<Set<number>>(new Set());
   const [hoverId, setHoverId] = useState<string | null>(null);
+  const [crt, setCrt] = useState(false);
+
+  useEffect(() => {
+    if (sceneRef.current) sceneRef.current.scanlines = crt;
+  }, [crt]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -99,6 +104,14 @@ export default function OfficeCanvas({
 
   return (
     <div className="canvas-frame">
+      <button
+        className={`crt-toggle${crt ? " on" : ""}`}
+        onClick={() => setCrt((v) => !v)}
+        title="Toggle CRT scanlines"
+        aria-pressed={crt}
+      >
+        CRT
+      </button>
       <canvas
         ref={canvasRef}
         width={WORLD_W}

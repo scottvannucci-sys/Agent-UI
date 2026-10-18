@@ -87,6 +87,34 @@ body {
   cursor: pointer;
 }
 
+.crt-toggle {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  line-height: 1;
+  padding: 5px 8px;
+  color: var(--paper-panel);
+  background: rgba(30, 42, 58, 0.88);
+  border: 2px solid #3c4d68;
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+}
+
+.crt-toggle.on {
+  border-color: #9fd8e8;
+  color: #9fd8e8;
+}
+
+.crt-toggle:active {
+  transform: translateY(1px);
+  box-shadow: none;
+}
+
 .canvas-frame::after {
   content: "";
   position: absolute;

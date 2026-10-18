@@ -107,6 +107,7 @@ export async function GET(req: Request) {
   if (weatherRaw === "rain" || weatherRaw === "snow" || weatherRaw === "clear") {
     scene.fixedWeather = weatherRaw;
   }
+  if (new URL(req.url).searchParams.get("scanlines") === "1") scene.scanlines = true;
 
   const hourRaw = new URL(req.url).searchParams.get("hour");
   const hour = hourRaw === null ? NaN : Number(hourRaw);
