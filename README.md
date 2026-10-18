@@ -153,6 +153,10 @@ tools/
   photo frames), a microwave in the kitchen, the Dundie award on the shelf,
   Employee-of-the-Month portraits, a motivational poster, a wet-floor sign,
   and a big *DUNDER BOTS, INC.* sign over reception.
+- **Meetings & the couch** — idle bots re-roll their spot every ~45s:
+  some take seats at the round table (chair backs peek around them) or
+  lounge on the reception sofa, trading original small talk in bubbles.
+  `/api/preview?t=<sim-seconds>` shifts the roll for deterministic renders.
 - Bot movement is BFS over the walkable tile grid; states map to locations
   (desk seat, watercooler, coffee machine, conference seats, boss office,
   printer for paper errands). Hovering a bot highlights it; clicking selects.

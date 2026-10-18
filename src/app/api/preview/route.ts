@@ -99,7 +99,10 @@ export async function GET(req: Request) {
   const snap = await fetchMockSnapshot();
   const bots = deriveBots(snap);
   const scene = new OfficeScene();
-  const now = 1_800_000; // fixed clock → deterministic frame
+  const tRaw = new URL(req.url).searchParams.get("t");
+  const tNum = tRaw === null ? NaN : Number(tRaw);
+  const now = Number.isFinite(tNum) && tNum > 0 ? tNum : 1_800_000; // fixed clock → deterministic frame
+  // (idle bots re-roll spots every 45 simulated seconds, so ?t= shifts who sits where)
 
   const hourRaw = new URL(req.url).searchParams.get("hour");
   const hour = hourRaw === null ? NaN : Number(hourRaw);

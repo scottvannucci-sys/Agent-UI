@@ -332,8 +332,9 @@ export const ZONES = {
   boss: { x: 3, y: 5 },
   reception: { x: 4, y: 19 },
   sofa: [
-    { x: 5, y: 19 },
-    { x: 6, y: 19 },
+    // the sofa cushions themselves; bots walk north of them, then step on
+    { x: 5, y: 20 },
+    { x: 6, y: 20 },
   ],
   conference: [
     { x: 28, y: 10 },

@@ -17,6 +17,7 @@ import {
   isTileFloor,
   isWall,
   tileCenter,
+  WALKABLE,
   type Furniture,
 } from "./floorplan";
 import type { BotSpec } from "../lib/hermes/derive";
@@ -25,6 +26,24 @@ import type { OfficeEvent } from "../lib/hermes/types";
 const SPEED = 46; // px per second
 const BUBBLE_MS = 5200;
 const AMBIENT_MS = 9000;
+
+/** Original meeting-room small talk for bots seated at the round table. */
+const CONFERENCE_TALK = [
+  "This meeting could've been a TPS report.",
+  "Let's take this offline. Wait — we're all offline.",
+  "Circling back is my whole personality.",
+  "Synergy is just teamwork with a budget.",
+  "I've scheduled the follow-up to the pre-follow-up.",
+  "Per my last email… which I just wrote.",
+];
+
+/** Couch wisdom for the reception sofa. */
+const SOFA_TALK = [
+  "Five more minutes, then the inbox. Promise.",
+  "The couch has better WiFi. I checked.",
+  "This is a load-bearing nap.",
+  "Reception is the heart of the company. Ask anyone here.",
+];
 
 /** Ceiling light fixtures — warm floor pools + fixture plates. */
 const LIGHT_FIXTURES: Array<[number, number]> = [
@@ -53,12 +72,12 @@ function shadeHex(a: string, b: string, f: number): string {
   return lerpHex(a, b, f);
 }
 
-type Activity = "stand" | "walk" | "type" | "carry";
+type Activity = "stand" | "walk" | "type" | "carry" | "sit";
 
 interface Waypoint {
   x: number;
   y: number;
-  onArrive?: "pickupPaper" | "dropPaper";
+  onArrive?: "pickupPaper" | "dropPaper" | "sitDown";
 }
 
 interface Entity {
@@ -70,7 +89,7 @@ interface Entity {
   path: Waypoint[];
   activity: Activity;
   deskIdx: number | null;
-  spot: string; // "desk" | "deskStand" | "watercooler" | "wander" | "coffee" | "door" | "conference"
+  spot: string; // "desk" | "deskStand" | "watercooler" | "wander" | "coffee" | "door" | "conference" | "sofa"
   bubble: { text: string; until: number } | null;
   animT: number;
   carry: boolean;
@@ -174,8 +193,8 @@ export class OfficeScene {
     return e;
   }
 
-  /** Where should this status put the bot? */
-  private spotFor(spec: BotSpec): string {
+  /** Where should this status put the bot? Idle bots re-roll every ~45s. */
+  private spotFor(spec: BotSpec, now: number): string {
     const seed = spec.paletteSeed;
     switch (spec.status) {
       case "working":
@@ -186,10 +205,12 @@ export class OfficeScene {
         return "coffee";
       case "idle":
       default: {
-        const roll = seed % 10;
-        if (roll < 5) return "deskStand";
-        if (roll < 8) return "watercooler";
-        return "wander";
+        const roll = (seed + Math.floor(now / 45_000)) % 10;
+        if (roll < 3) return "deskStand";
+        if (roll < 6) return "watercooler";
+        if (roll < 8) return "wander";
+        if (roll < 9) return "conference";
+        return "sofa";
       }
     }
   }
@@ -209,7 +230,12 @@ export class OfficeScene {
   private goTo(e: Entity, tx: number, ty: number, onArrive?: Waypoint["onArrive"]): void {
     const sx = Math.floor(e.x / TILE);
     const sy = Math.floor((e.y - 1) / TILE);
-    const tiles = findPath(sx, sy, tx, ty);
+    let tiles = findPath(sx, sy, tx, ty);
+    if (!tiles.length && (sx !== tx || sy !== ty) && !WALKABLE[sy * MAP_W + sx]) {
+      // standing on furniture (e.g. sofa cushions) — step off north and retry
+      e.y -= TILE;
+      tiles = findPath(sx, sy - 1, tx, ty);
+    }
     const pts: Waypoint[] = tiles.map((p) => ({ ...tileCenter(p.x, p.y) }));
     if (onArrive) pts.push({ x: pts[pts.length - 1]?.x ?? e.x, y: pts[pts.length - 1]?.y ?? e.y, onArrive });
     e.path = pts;
@@ -225,7 +251,7 @@ export class OfficeScene {
       e.spec = spec;
       if (e.lastStatus !== spec.status || !e.path.length) {
         e.lastStatus = spec.status;
-        e.spot = this.spotFor(spec);
+        e.spot = this.spotFor(spec, now);
         this.applySpot(e, now);
       }
     }
@@ -276,6 +302,30 @@ export class OfficeScene {
         const w = ZONES.wander[spec.paletteSeed % ZONES.wander.length];
         e.activity = "stand";
         this.goTo(e, w.x, w.y);
+        break;
+      }
+      case "conference": {
+        // take a seat at the round table (chairs are walkable tiles)
+        const c = ZONES.conference[spec.paletteSeed % ZONES.conference.length];
+        if (
+          e.activity === "sit" &&
+          Math.abs(e.x - tileCenter(c.x, c.y).x) < 1 &&
+          Math.abs(e.y - tileCenter(c.x, c.y).y) < 1
+        )
+          break; // already seated here
+        this.goTo(e, c.x, c.y);
+        break;
+      }
+      case "sofa": {
+        // walk north of the couch, then step onto the cushions and sit
+        const s = ZONES.sofa[spec.paletteSeed % ZONES.sofa.length];
+        if (
+          e.activity === "sit" &&
+          Math.abs(e.x - tileCenter(s.x, s.y).x) < 1 &&
+          Math.abs(e.y - tileCenter(s.x, s.y).y) < 1
+        )
+          break; // already seated here
+        this.goTo(e, s.x, s.y - 1, "sitDown");
         break;
       }
     }
@@ -367,9 +417,20 @@ export class OfficeScene {
             e.delivery = null;
             e.bubble = { text: "Delivered to the boss. Dundie-worthy.", until: now + BUBBLE_MS };
             if (e.spec) this.applySpot(e, now);
+          } else if (target.onArrive === "sitDown") {
+            // step from the tile north of the sofa onto the cushions
+            e.y += TILE;
+            e.activity = "sit";
           }
           if (!e.path.length && e.activity === "walk") {
-            e.activity = e.carry ? "carry" : e.spot === "desk" ? "type" : "stand";
+            e.activity =
+              e.carry
+                ? "carry"
+                : e.spot === "desk"
+                  ? "type"
+                  : e.spot === "conference" || e.spot === "sofa"
+                    ? "sit"
+                    : "stand";
           }
         } else {
           e.x += (dx / dist) * step;
@@ -388,7 +449,11 @@ export class OfficeScene {
       if (e.spec && now > e.lastAmbient) {
         e.lastAmbient = now + AMBIENT_MS * (0.7 + Math.random() * 0.8);
         if (!e.bubble || e.bubble.until < now) {
-          const t = e.spec.statusText;
+          let t = e.spec.statusText;
+          if (e.activity === "sit" && Math.random() < 0.5) {
+            const pool = e.spot === "conference" ? CONFERENCE_TALK : SOFA_TALK;
+            t = pool[Math.floor(Math.random() * pool.length)];
+          }
           if (t) e.bubble = { text: t, until: now + BUBBLE_MS };
         }
       }
@@ -913,10 +978,11 @@ export class OfficeScene {
   }
 
   private drawConfChair(t: PixelTarget, px: number, py: number): void {
-    t.rect(px + 9, py + 4, 14, 11, C.plastic);
-    t.rect(px + 9, py + 4, 14, 1, C.metalDark);
-    t.rect(px + 8, py + 15, 16, 4, C.metal);
-    t.rect(px + 8, py + 15, 16, 1, C.metalHi);
+    // back/seat 1px wider than the sitter's torso so the chair reads behind them
+    t.rect(px + 8, py + 4, 16, 11, C.plastic);
+    t.rect(px + 8, py + 4, 16, 1, C.metalDark);
+    t.rect(px + 7, py + 15, 18, 4, C.metal);
+    t.rect(px + 7, py + 15, 18, 1, C.metalHi);
     t.rect(px + 14, py + 19, 3, 6, C.metalDark);
     t.rect(px + 9, py + 25, 14, 2, C.metalDark);
   }
@@ -1093,7 +1159,7 @@ export class OfficeScene {
     let frame: "stand" | "walkA" | "walkB" | "sitA" | "sitB" | "carry" = "stand";
     if (e.activity === "walk" || e.activity === "carry") {
       frame = Math.floor(e.animT * 6) % 2 === 0 ? "walkA" : "walkB";
-    } else if (e.activity === "type") {
+    } else if (e.activity === "type" || e.activity === "sit") {
       frame = Math.floor(e.animT * 3) % 2 === 0 ? "sitA" : "sitB";
     }
     if (e.carry && e.activity !== "type") frame = "carry";
@@ -1118,7 +1184,7 @@ export class OfficeScene {
       t.rect(bpx + 28, bpy + 25, 1, 2, "#e8eef2");
     }
 
-    const seated = e.activity === "type";
+    const seated = e.activity === "type" || e.activity === "sit";
     const top = Math.round(e.y) - (seated ? SEATED_H + 2 : CHAR_H + 2);
     const px = Math.round(e.x) - CHAR_W / 2;
 
@@ -1191,7 +1257,7 @@ export class OfficeScene {
     const maxLen = Math.max(...lines.map((l) => l.length));
     const w = maxLen * 4 + 12;
     const h = lines.length * 6 + 9;
-    const seated = e.activity === "type";
+    const seated = e.activity === "type" || e.activity === "sit";
     let bx = Math.round(e.x - w / 2);
     let by = Math.round(e.y) - (seated ? 40 : 52) - h;
     bx = Math.max(2, Math.min(MAP_W * TILE - w - 2, bx));
