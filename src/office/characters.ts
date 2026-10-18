@@ -1,44 +1,19 @@
-import { botPalette, C } from "./palette";
+import { C, shade } from "./palette";
 import type { PixelTarget } from "./render-core";
 
 /**
- * Procedural pixel-character composer. Bots are 24×30 with feet on the
- * bottom row; looks (hair, glasses, tie, skirt, colors) derive from a seed so
- * every bot gets a distinct office outfit. All drawing goes through
+ * 16-bit-style procedural pixel-character composer. Bots are 32×46 with feet
+ * on the bottom row; looks (hair, glasses, tie, skirt, colors) derive from a
+ * seed so every bot gets a distinct office outfit. All drawing goes through
  * PixelTarget.rect so it works in the browser and the Node preview alike.
  */
 
-export const CHAR_W = 24;
-export const CHAR_H = 30;
+export const CHAR_W = 32;
+export const CHAR_H = 46;
+/** Rows of visible body while seated at a desk (legs hidden). */
+export const SEATED_H = 30;
 
 export type BotFrame = "stand" | "walkA" | "walkB" | "sitA" | "sitB" | "carry";
-
-export interface DrawBotOpts {
-  /** wall-clock ms — drives blinking and talking mouths */
-  now?: number;
-  /** mouth animates while a speech bubble is up */
-  talking?: boolean;
-  /** -1..1: pupils lean toward walking direction */
-  pupilDx?: number;
-  /** per-bot phase so the office doesn't blink in sync */
-  blinkSeed?: number;
-  /** 1px silhouette outline (default on) */
-  outline?: boolean;
-}
-
-/** Wraps a target and stamps the whole silhouette in the outline color,
- * offset by (ox, oy) — four stamps give a crisp 1px rim around the sprite. */
-class StampTarget implements PixelTarget {
-  constructor(
-    private readonly inner: PixelTarget,
-    private readonly ox: number,
-    private readonly oy: number,
-  ) {}
-  rect(x: number, y: number, w: number, h: number, color: string): void {
-    if (color.startsWith("rgba")) return; // translucent fx are not silhouette
-    this.inner.rect(x + this.ox, y + this.oy, w, h, C.outline);
-  }
-}
 
 export interface BotLook {
   skin: string;
@@ -51,6 +26,15 @@ export interface BotLook {
   tie: boolean;
   skirt: boolean;
   tieColor: string;
+}
+
+function botPalette(seed: number): { K: string; H: string; S: string; P: string } {
+  return {
+    K: C.skin[seed % C.skin.length],
+    H: C.hair[Math.floor(seed / 2) % C.hair.length],
+    S: C.shirt[Math.floor(seed / 3) % C.shirt.length],
+    P: C.pants[Math.floor(seed / 5) % C.pants.length],
+  };
 }
 
 export function botLook(seed: number): BotLook {
@@ -93,47 +77,175 @@ const R = (
 
 /** Soft contact shadow under a standing/walking bot. */
 export function drawBotShadow(t: PixelTarget, cx: number, feetY: number): void {
-  R(t, Math.round(cx) - 9, feetY - 2, 18, 2, "rgba(20,25,35,0.18)");
-  R(t, Math.round(cx) - 6, feetY, 12, 1, "rgba(20,25,35,0.12)");
+  R(t, Math.round(cx) - 13, feetY - 2, 26, 2, "rgba(20,25,35,0.18)");
+  R(t, Math.round(cx) - 9, feetY, 18, 1, "rgba(20,25,35,0.12)");
 }
 
-/** eyes with blink + pupil lean; row = top row of the 2px-tall eye */
-function drawEyes(
+export interface DrawBotOpts {
+  /** wall-clock ms — drives blinking and talking mouths */
+  now?: number;
+  /** mouth animates while a speech bubble is up */
+  talking?: boolean;
+  /** -1..1: pupils lean toward walking direction */
+  pupilDx?: number;
+  /** -1..0..1: body turns toward the walking direction (profile hint) */
+  dir?: number;
+  /** per-bot phase so the office doesn't blink in sync */
+  blinkSeed?: number;
+  /** 1px silhouette outline (default on) */
+  outline?: boolean;
+}
+
+class StampTarget implements PixelTarget {
+  constructor(
+    private readonly inner: PixelTarget,
+    private readonly ox: number,
+    private readonly oy: number,
+  ) {}
+  rect(x: number, y: number, w: number, h: number, color: string): void {
+    if (color.startsWith("rgba")) return; // translucent fx are not silhouette
+    this.inner.rect(x + this.ox, y + this.oy, w, h, C.outline);
+  }
+}
+
+/** Feet-center + frame → pixel position helper. */
+export function botDrawPos(cx: number, feetY: number, frame: BotFrame): { px: number; py: number } {
+  const sitting = frame === "sitA" || frame === "sitB";
+  return {
+    px: Math.round(cx - CHAR_W / 2),
+    py: Math.round(sitting ? feetY - SEATED_H : feetY - CHAR_H),
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* head — rows headTop..headTop+14, hx leans toward the walk direction */
+/* ------------------------------------------------------------------ */
+
+function drawHead(
   t: PixelTarget,
   px: number,
   py: number,
-  row: number,
+  headTop: number,
+  look: BotLook,
   opts: DrawBotOpts,
 ): void {
+  const dir = Math.sign(opts.dir ?? 0);
+  const hx = px + dir * 2;
+  const hy = py + headTop; // first head row
+  const skinHi = shade(look.skin, 0.18);
+  const skinSh = shade(look.skin, -0.16);
+
+  // dome
+  R(t, hx + 13, hy, 6, 2, look.skin);
+  R(t, hx + 11, hy + 2, 10, 11, look.skin);
+  R(t, hx + 12, hy + 13, 8, 1, look.skin);
+  // shading ramps
+  R(t, hx + 11, hy + 3, 2, 9, skinHi);
+  R(t, hx + 19, hy + 5, 2, 8, skinSh);
+  // ears
+  R(t, hx + 10, hy + 7, 1, 3, look.skin);
+  R(t, hx + 21, hy + 7, 1, 3, look.skin);
+
+  /* hair */
+  const H = look.hair;
+  const HHi = shade(H, 0.25);
+  const HSh = shade(H, -0.2);
+  switch (look.hairStyle) {
+    case 0: // short
+      R(t, hx + 11, hy - 2, 10, 4, H);
+      R(t, hx + 12, hy - 2, 8, 1, HHi);
+      R(t, hx + 11, hy + 2, 2, 4, H);
+      R(t, hx + 19, hy + 2, 2, 4, HSh);
+      break;
+    case 1: // side part
+      R(t, hx + 11, hy - 2, 10, 4, H);
+      R(t, hx + 12, hy - 2, 5, 1, HHi);
+      R(t, hx + 11, hy + 2, 5, 3, H);
+      R(t, hx + 19, hy + 2, 2, 2, HSh);
+      break;
+    case 2: // long
+      R(t, hx + 11, hy - 2, 10, 4, H);
+      R(t, hx + 12, hy - 2, 8, 1, HHi);
+      R(t, hx + 10, hy + 2, 2, 12, H);
+      R(t, hx + 20, hy + 2, 2, 12, HSh);
+      R(t, hx + 10, hy + 2, 1, 12, HHi);
+      break;
+    case 3: // bald
+      R(t, hx + 14, hy + 1, 4, 1, "rgba(255,255,255,0.4)");
+      R(t, hx + 11, hy + 2, 1, 2, HSh);
+      R(t, hx + 20, hy + 2, 1, 2, HSh);
+      break;
+    case 4: // spiky
+      R(t, hx + 12, hy - 1, 2, 3, H);
+      R(t, hx + 15, hy - 3, 2, 5, H);
+      R(t, hx + 18, hy - 1, 2, 3, H);
+      R(t, hx + 11, hy + 1, 10, 3, H);
+      R(t, hx + 12, hy + 1, 8, 1, HHi);
+      break;
+    default: // receding
+      R(t, hx + 13, hy, 6, 3, H);
+      R(t, hx + 11, hy + 2, 2, 3, H);
+      R(t, hx + 19, hy + 2, 2, 3, HSh);
+      break;
+  }
+
+  /* profile turn: shade the back of the head, bump a nose on the leading edge */
+  if (dir !== 0) {
+    const backX = dir > 0 ? hx + 10 : hx + 19;
+    R(t, backX, hy + 3, 2, 6, HSh);
+    const noseX = dir > 0 ? hx + 21 : hx + 9;
+    R(t, noseX, hy + 9, 1, 2, look.skin);
+  }
+
+  /* brows + eyes (the far eye hides when turned) */
+  const eyeRow = hy + 7;
   const dx = Math.max(-1, Math.min(1, opts.pupilDx ?? 0));
   const now = opts.now ?? 0;
   const blinking =
-    opts.now !== undefined && (now / 1000 + (opts.blinkSeed ?? 0) * 1.37) % 5.3 < 0.14;
-  if (blinking) {
-    R(t, px + 9, py + row + 1, 3, 1, C.outline);
-    R(t, px + 12, py + row + 1, 3, 1, C.outline);
-    return;
+    opts.now !== undefined && (now / 1000 + (opts.blinkSeed ?? 0) * 1.37) % 5.3 < 0.16;
+  const eye = (ex: number) => {
+    if (blinking) {
+      R(t, hx + ex, eyeRow + 1, 3, 1, C.outline);
+      return;
+    }
+    R(t, hx + ex, eyeRow, 3, 3, "#ffffff");
+    R(t, hx + ex + 1 + dx, eyeRow, 1, 2, C.outline);
+    R(t, hx + ex, eyeRow + 3, 3, 1, skinSh);
+  };
+  const brow = (ex: number) => R(t, hx + ex, eyeRow - 1, 3, 1, HSh);
+  if (dir >= 0) {
+    eye(18);
+    brow(18);
   }
-  R(t, px + 9, py + row, 3, 2, "#ffffff");
-  R(t, px + 12, py + row, 3, 2, "#ffffff");
-  R(t, px + 10 + dx, py + row, 1, 2, C.outline);
-  R(t, px + 13 + dx, py + row, 1, 2, C.outline);
-}
+  if (dir <= 0) {
+    eye(13);
+    brow(13);
+  }
 
-/** mouth with talk animation; row = top row of the mouth */
-function drawMouth(t: PixelTarget, px: number, py: number, row: number, opts: DrawBotOpts): void {
+  if (look.glasses) {
+    for (const ex of dir >= 0 ? [18] : dir <= 0 ? [13] : [13, 18]) {
+      R(t, hx + ex - 1, eyeRow - 1, 5, 1, C.outline);
+      R(t, hx + ex - 1, eyeRow - 1, 1, 5, C.outline);
+      R(t, hx + ex + 3, eyeRow - 1, 1, 5, C.outline);
+    }
+    if (dir === 0) R(t, hx + 16, eyeRow + 1, 2, 1, C.outline);
+  }
+
+  /* nose + mouth */
+  if (dir === 0) R(t, hx + 16, hy + 10, 1, 1, skinSh);
+  const mx = hx + 15 + dir * 2;
   const open = opts.talking && Math.floor((opts.now ?? 0) / 160) % 2 === 0;
   if (open) {
-    R(t, px + 11, py + row, 2, 2, "rgba(38,38,46,0.85)");
+    R(t, mx, hy + 11, 2, 2, "rgba(38,38,46,0.85)");
   } else {
-    R(t, px + 11, py + row, 2, 1, "rgba(38,38,46,0.75)");
+    R(t, mx, hy + 11, 2, 1, "rgba(38,38,46,0.75)");
   }
 }
 
-/**
- * Draw a bot with feet at (cx, feetY) — px is the left edge of the 24px cell.
- * `py` is derived by the caller via drawBotAt().
- */
+/* ------------------------------------------------------------------ */
+/* torso + limbs                                                       */
+/* ------------------------------------------------------------------ */
+
 function drawBody(
   t: PixelTarget,
   px: number,
@@ -143,174 +255,94 @@ function drawBody(
   opts: DrawBotOpts = {},
 ): void {
   const sitting = frame === "sitA" || frame === "sitB";
-  const bob = frame === "walkA" || frame === "walkB" ? 0 : 0;
+  const shirtSh = shade(look.shirt, -0.14);
+  const shirtHi = shade(look.shirt, 0.16);
+  const dir = Math.sign(opts.dir ?? 0);
 
-  if (!sitting) {
-    /* ---------------- head ---------------- */
-    // dome: rows 4-13 (rounded via narrower top/bottom rows)
-    R(t, px + 8, py + 4, 8, 2, look.skin); // 4-5
-    R(t, px + 7, py + 6, 10, 7, look.skin); // 6-12
-    R(t, px + 8, py + 13, 8, 1, look.skin); // 13 chin
-    // ears
-    R(t, px + 6, py + 9, 1, 2, look.skin);
-    R(t, px + 17, py + 9, 1, 2, look.skin);
-
-    /* ---------------- hair ---------------- */
-    const H = look.hair;
-    switch (look.hairStyle) {
-      case 0: // short
-        R(t, px + 7, py + 2, 10, 3, H);
-        R(t, px + 7, py + 5, 2, 3, H);
-        R(t, px + 15, py + 5, 2, 3, H);
-        break;
-      case 1: // side part
-        R(t, px + 7, py + 2, 10, 3, H);
-        R(t, px + 7, py + 5, 4, 2, H);
-        R(t, px + 15, py + 5, 2, 1, H);
-        break;
-      case 2: // long — drawn behind shoulders too
-        R(t, px + 7, py + 2, 10, 3, H);
-        R(t, px + 7, py + 5, 2, 4, H);
-        R(t, px + 15, py + 5, 2, 4, H);
-        R(t, px + 6, py + 8, 2, 8, H);
-        R(t, px + 16, py + 8, 2, 8, H);
-        break;
-      case 3: // bald
-        R(t, px + 9, py + 5, 3, 1, "rgba(255,255,255,0.35)"); // shine
-        break;
-      case 4: // spiky
-        R(t, px + 8, py + 3, 2, 2, H);
-        R(t, px + 11, py + 2, 2, 3, H);
-        R(t, px + 14, py + 3, 2, 2, H);
-        R(t, px + 7, py + 4, 10, 2, H);
-        break;
-      default: // receding
-        R(t, px + 9, py + 3, 6, 2, H);
-        R(t, px + 7, py + 5, 2, 2, H);
-        R(t, px + 15, py + 5, 2, 2, H);
-        break;
-    }
-
-    /* ---------------- face ---------------- */
-    drawEyes(t, px, py, 8, opts);
-    drawMouth(t, px, py, 11, opts);
-    if (look.glasses) {
-      R(t, px + 8, py + 7, 5, 1, C.outline);
-      R(t, px + 8, py + 7, 1, 4, C.outline);
-      R(t, px + 12, py + 7, 4, 1, C.outline);
-      R(t, px + 15, py + 7, 1, 4, C.outline);
-      R(t, px + 12, py + 9, 1, 1, C.outline);
-    }
-
-    /* ---------------- torso ---------------- */
-    const shirtTop = 15;
-    R(t, px + 8, py + shirtTop, 8, 2, look.shirt); // shoulders 15-16
-    R(t, px + 6, py + shirtTop + 2, 12, 5, look.shirt); // 17-21
-    // collar
-    R(t, px + 10, py + shirtTop, 4, 1, "rgba(255,255,255,0.55)");
+  if (sitting) {
+    drawHead(t, px, py, 0, look, opts);
+    /* torso rows 15-24, arms forward on the desk */
+    R(t, px + 9, py + 15, 14, 2, look.shirt);
+    R(t, px + 8, py + 17, 16, 8, look.shirt);
+    R(t, px + 21, py + 15, 3, 10, shirtSh);
+    R(t, px + 8, py + 17, 1, 8, shirtHi);
+    R(t, px + 14, py + 15, 4, 2, "rgba(255,255,255,0.55)");
     if (look.tie) {
-      R(t, px + 11, py + shirtTop + 1, 2, 1, look.tieColor);
-      R(t, px + 11, py + shirtTop + 2, 2, 3, look.tieColor);
-    }
-  } else {
-    /* ---------------- sitting (rows shifted, legs hidden by desk) --------- */
-    // head rows 0-9
-    R(t, px + 8, py, 8, 2, look.skin);
-    R(t, px + 7, py + 2, 10, 6, look.skin);
-    R(t, px + 8, py + 8, 8, 1, look.skin);
-    R(t, px + 6, py + 5, 1, 2, look.skin);
-    R(t, px + 17, py + 5, 1, 2, look.skin);
-    const H = look.hair;
-    if (look.hairStyle === 2) {
-      R(t, px + 6, py + 3, 12, 2, H);
-      R(t, px + 6, py + 4, 2, 6, H);
-      R(t, px + 16, py + 4, 2, 6, H);
-    } else if (look.hairStyle === 3) {
-      R(t, px + 9, py + 1, 3, 1, "rgba(255,255,255,0.35)");
+      R(t, px + 15, py + 17, 2, 2, look.tieColor);
+      R(t, px + 15, py + 19, 2, 3, look.tieColor);
     } else {
-      R(t, px + 7, py - 2, 10, 3, H);
-      R(t, px + 7, py + 1, 2, 2, H);
-      R(t, px + 15, py + 1, 2, 2, H);
-      if (look.hairStyle === 4) {
-        R(t, px + 8, py - 3, 2, 1, H);
-        R(t, px + 11, py - 4, 2, 2, H);
-        R(t, px + 14, py - 3, 2, 1, H);
-      }
-    }
-    // eyes rows 4-5, mouth row 7
-    drawEyes(t, px, py, 4, opts);
-    drawMouth(t, px, py, 7, opts);
-    if (look.glasses) {
-      R(t, px + 8, py + 3, 5, 1, C.outline);
-      R(t, px + 8, py + 3, 1, 4, C.outline);
-      R(t, px + 12, py + 3, 4, 1, C.outline);
-      R(t, px + 15, py + 3, 1, 4, C.outline);
-      R(t, px + 12, py + 5, 1, 1, C.outline);
-    }
-    // torso rows 9-16, arms forward on the desk
-    R(t, px + 8, py + 9, 8, 2, look.shirt);
-    R(t, px + 6, py + 11, 12, 4, look.shirt);
-    R(t, px + 10, py + 9, 4, 1, "rgba(255,255,255,0.55)");
-    if (look.tie) {
-      R(t, px + 11, py + 10, 2, 1, look.tieColor);
-      R(t, px + 11, py + 11, 2, 2, look.tieColor);
+      R(t, px + 16, py + 18, 1, 5, shirtSh);
     }
     // forward arms + typing hands
     const handUp = frame === "sitA";
-    R(t, px + 4, py + 11, 4, 2, look.shirt);
-    R(t, px + 16, py + 11, 4, 2, look.shirt);
-    R(t, px + 4, py + 13 + (handUp ? 0 : 1), 3, 2, look.skin);
-    R(t, px + 17, py + 13 + (handUp ? 1 : 0), 3, 2, look.skin);
-    return; // legs hidden
+    R(t, px + 5, py + 16, 4, 4, look.shirt);
+    R(t, px + 23, py + 16, 4, 4, look.shirt);
+    R(t, px + 5, py + 20 + (handUp ? 0 : 1), 3, 3, look.skin);
+    R(t, px + 24, py + 20 + (handUp ? 1 : 0), 3, 3, look.skin);
+    return; // legs hidden behind the desk
   }
 
-  /* ---------------- arms (standing variants) ---------------- */
+  drawHead(t, px, py, 5, look, opts);
+
+  /* torso rows 20-29 */
+  R(t, px + 9, py + 20, 14, 2, look.shirt);
+  R(t, px + 8, py + 22, 16, 8, look.shirt);
+  R(t, px + 21, py + 20, 3, 10, shirtSh);
+  R(t, px + 8, py + 22, 1, 8, shirtHi);
+  R(t, px + 14, py + 20, 4, 2, "rgba(255,255,255,0.55)");
+  if (look.tie) {
+    R(t, px + 15, py + 22, 2, 2, look.tieColor);
+    R(t, px + 15, py + 24, 2, 5, look.tieColor);
+  } else {
+    R(t, px + 16, py + 23, 1, 7, shirtSh);
+  }
+
+  /* arms (standing variants) */
   const swing = frame === "walkA" ? 1 : frame === "walkB" ? -1 : 0;
   if (frame === "carry") {
     // both arms forward holding a ream
-    R(t, px + 5, py + 18, 3, 3, look.shirt);
-    R(t, px + 16, py + 18, 3, 3, look.shirt);
-    R(t, px + 6, py + 21, 12, 2, look.skin);
-    R(t, px + 8, py + 16, 8, 5, C.paper); // the ream
-    R(t, px + 8, py + 16, 8, 1, C.paperShade);
+    R(t, px + 6, py + 21, 4, 4, look.shirt);
+    R(t, px + 22, py + 21, 4, 4, look.shirt);
+    R(t, px + 8, py + 25, 16, 2, look.skin);
+    R(t, px + 10, py + 19, 12, 7, C.paper); // the ream
+    R(t, px + 10, py + 19, 12, 1, C.paperShade);
+    R(t, px + 10, py + 22, 12, 1, "rgba(38,38,46,0.25)");
     return;
   }
-  // sleeves
-  R(t, px + 4, py + 17 + Math.max(0, swing), 3, 3, look.shirt);
-  R(t, px + 17, py + 17 + Math.max(0, -swing), 3, 3, look.shirt);
-  // hands
-  R(t, px + 4, py + 20 + Math.max(0, swing), 3, 2, look.skin);
-  R(t, px + 17, py + 20 + Math.max(0, -swing), 3, 2, look.skin);
+  R(t, px + 5, py + 21 + Math.max(0, swing), 4, 6, look.shirt);
+  R(t, px + 23, py + 21 + Math.max(0, -swing), 4, 6, look.shirt);
+  R(t, px + 5, py + 27 + Math.max(0, swing), 3, 3, look.skin);
+  R(t, px + 24, py + 27 + Math.max(0, -swing), 3, 3, look.skin);
 
-  /* ---------------- legs & shoes ---------------- */
-  const legTop = 22;
+  /* belt */
+  R(t, px + 9, py + 30, 14, 2, shade(look.pants, -0.3));
+  R(t, px + 15, py + 30, 2, 2, C.metal);
+
+  /* legs & shoes */
+  const legTop = 32;
   if (look.skirt) {
-    R(t, px + 5, py + legTop, 14, 3, look.pants); // skirt
-    R(t, px + 8, py + legTop + 3, 3, 2, look.skin);
-    R(t, px + 13, py + legTop + 3, 3, 2, look.skin);
+    R(t, px + 8, py + legTop, 16, 5, look.pants); // skirt
+    R(t, px + 7, py + legTop + 3, 18, 3, look.pants);
+    R(t, px + 7, py + legTop + 5, 18, 1, shade(look.pants, -0.2));
+    R(t, px + 11, py + legTop + 5, 3, 4, look.skin);
+    R(t, px + 18, py + legTop + 5, 3, 4, look.skin);
   } else {
-    R(t, px + 8, py + legTop, 3, 5, look.pants);
-    R(t, px + 13, py + legTop, 3, 5, look.pants);
-    R(t, px + 10, py + legTop + 1, 3, 4, look.pants); // hip fill
+    R(t, px + 10, py + legTop, 5, 10, look.pants);
+    R(t, px + 17, py + legTop, 5, 10, look.pants);
+    R(t, px + 14, py + legTop + 1, 4, 5, shade(look.pants, -0.12)); // hip fill
   }
   const lift = frame === "walkA" ? 1 : frame === "walkB" ? -1 : 0;
-  // left shoe (lifts on walkA)
-  const lShoeY = py + 27 - Math.max(0, lift);
-  R(t, px + 7, lShoeY, 5, 3 - Math.max(0, lift), look.shoe);
-  R(t, px + 7, lShoeY + 2, 5, 1, "#3d3d47");
-  // right shoe (lifts on walkB)
-  const rShoeY = py + 27 - Math.max(0, -lift);
-  R(t, px + 12, rShoeY, 5, 3 - Math.max(0, -lift), look.shoe);
-  R(t, px + 12, rShoeY + 2, 5, 1, "#3d3d47");
-}
-
-/** Feet-center + frame → pixel position helper. */
-export function botDrawPos(cx: number, feetY: number, frame: BotFrame): { px: number; py: number } {
-  const sitting = frame === "sitA" || frame === "sitB";
-  return {
-    px: Math.round(cx - CHAR_W / 2),
-    py: Math.round(sitting ? feetY - 22 : feetY - CHAR_H),
-  };
+  const liftL = Math.max(0, lift);
+  const liftR = Math.max(0, -lift);
+  // left shoe
+  const lTop = py + 42 - liftL;
+  R(t, px + 9, lTop, 7, 4 - liftL, look.shoe);
+  R(t, px + 9, lTop, 7, 1, shade(look.shoe, 0.25));
+  // right shoe
+  const rTop = py + 42 - liftR;
+  R(t, px + 16, rTop, 7, 4 - liftR, look.shoe);
+  R(t, px + 16, rTop, 7, 1, shade(look.shoe, 0.25));
+  void dir;
 }
 
 export function drawBot(

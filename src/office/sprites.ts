@@ -1,7 +1,7 @@
 /**
- * Pixel-art prop sprites as string grids (24×24). Each row indexes `palette`
- * by character; '.' is transparent. Characters are drawn procedurally — see
- * characters.ts — these grids cover the more organic props.
+ * Pixel-art prop sprites as string grids (32×32, 16-bit style). Each row
+ * indexes `palette` by character; '.' is transparent. Characters are drawn
+ * procedurally — see characters.ts — these grids cover the organic props.
  */
 
 export interface Sprite {
@@ -14,6 +14,7 @@ export interface Sprite {
 const ITEM: Record<string, string> = {
   D: "#26262e", // outline
   W: "#e8eef2", // bottle plastic / white
+  w2: "#c8d3da", // plastic shade
   C: "#4f9bd6", // water
   c: "#7db8e0", // light water
   G: "#d5d8da", // light plastic
@@ -24,123 +25,156 @@ const ITEM: Record<string, string> = {
   k: "#7f8a92", // metal
   r: "#e05555", // red light
   p: "#a5502c", // pot
-  p2: "#7c3a1e", // pot dark
+  "2": "#7c3a1e", // pot dark
+  l: "#c97a4a", // pot light
   L: "#3f7d44", // leaf
-  l: "#57a05c", // leaf light
+  i: "#57a05c", // leaf light
   d: "#2d5c31", // leaf dark
   f: "#6b4a2b", // coffee
 };
 
-/* ---------------- water cooler 24×24 ---------------- */
+/* ---------------- water cooler 32×32 ---------------- */
 const WATERCOOLER = [
-  "........DDDDDDDD........",
-  ".......DWWWWWWWWD.......",
-  "......DWWWWWWWWWWD......",
-  "......DWCCCCCCCCWD......",
-  "......DWCcCCCCcCWD......",
-  "......DWCCCCCCCCWD......",
-  "......DWCcCCCCCCCWD.....",
-  "......DWCCCCCCCCWD......",
-  "......DWWWWWWWWWWD......",
-  ".......DWWWWWWWWD.......",
-  "........DDDDDDDD........",
-  "........DGGGGGGD........",
-  "........DGgggggD........",
-  "........DGrGGGGD........",
-  "........DGgggggD........",
-  "........DGGGGGGD........",
-  "........DGGGGGGD........",
-  "........DGDDDDGD........",
-  "........DGGGGGGD........",
-  "........DDDDDDDD........",
-  "..........DDDD..........",
-  "........................",
-  "........................",
-  "........................",
+  "................................",
+  "..........DDDDDDDDDDDD..........",
+  "..........DWWWWWWWWWWD..........",
+  "..........DWWWWWWWWWWD..........",
+  "..........DWCCCCCCCCWD..........",
+  "..........DWCcCCCCCCWD..........",
+  "..........DWCCCCCCCCWD..........",
+  "..........DWCCCcCCCCWD..........",
+  "..........DWCCCCCCCCWD..........",
+  "..........DWCcCCCCcCWD..........",
+  "..........DWCCCCCCCCWD..........",
+  "..........DWCCCcCCCCWD..........",
+  "..........DWWWWWWWWWWD..........",
+  "..........DDDDDDDDDDDD..........",
+  "...........DDDDDDDDDD...........",
+  "..........DGGGGGGGGGGD..........",
+  "..........DGgggggggggD..........",
+  "..........DGrGGGGGGGGD..........",
+  "..........DGgggggggggD..........",
+  "..........DGGGGGGGGGGD..........",
+  "..........DGGGGGGGGGGD..........",
+  "..........DGDDDDDDDDGD..........",
+  "..........DGGGGGGGGGGD..........",
+  "..........DGGGGGGGGGGD..........",
+  "..........DGgggggggggD..........",
+  "..........DGgggggggggD..........",
+  "..........DGGGGGGGGGGD..........",
+  "..........DDDDDDDDDDDD..........",
+  "...........DDDDDDDDDD...........",
+  "............DDDDDDDD............",
+  "................................",
+  "................................",
 ];
 
-/* ---------------- potted plant 24×24 ---------------- */
+/* ---------------- potted plant 32×32 ---------------- */
 const PLANT = [
-  "...........LL...........",
-  "......LL...LL...........",
-  ".....LLLLLdLLL..........",
-  "....LLLLdLLLLLL.........",
-  "...LLdLLLLLLdLLL........",
-  "...LLLLLLdLLLLLL........",
-  "....LLLdLLLLLdLL........",
-  ".....LLLLLLdLLL.........",
-  "......LLdLLLLL..........",
-  ".......LLLLLL...........",
-  "........dLLLd...........",
-  ".........LLL............",
-  ".........dLd............",
-  "........DDDDDD..........",
-  "........DpppppD.........",
-  "........DpppppD.........",
-  ".........DpppD..........",
-  ".........Dpp2D..........",
-  ".........Dpp2D..........",
-  ".........Dpp2D..........",
-  "........DDDDDDD.........",
-  "........................",
-  "........................",
-  "........................",
+  "..............LLiLL.............",
+  "..........LLLiLLLlLL............",
+  "........LLiLLdLLLlLL............",
+  ".......LLdLLLiLLLLLLL...........",
+  "......LLLLLdLLLLLdLLLL..........",
+  ".....LLLlLLLLLLdLLLLLLL.........",
+  "....LLdLLLLLlLLLLLLdLLLL........",
+  "....LLLLLdLLLLLLlLLLLLLL........",
+  ".....LLLlLLLLLdLLLLLlLLL........",
+  "......LLLLLLdLLLLLLLdLL.........",
+  ".......LLLlLLLLLlLLLL...........",
+  "........LLLLdLLLLdLL............",
+  ".........dLLLLLLdLL.............",
+  "..........LLdLLLLL..............",
+  "...........LLLLdL...............",
+  "...........LLLLL................",
+  "...........dLLL.................",
+  "...........dLL..................",
+  ".........DDDDDDDDDDDD...........",
+  "..........DppppppppD............",
+  "..........DpllllllpD............",
+  "..........DppppppppD............",
+  "..........DpllllllpD............",
+  "..........Dpp2pp2ppD............",
+  "..........Dpp2pp2ppD............",
+  "..........DppppppppD............",
+  "..........DppppppppD............",
+  ".........DDDDDDDDDDDD...........",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
 ];
 
-/* ---------------- cardboard box 24×24 ---------------- */
+/* ---------------- cardboard box 32×32 ---------------- */
 const BOX = [
-  "........................",
-  "........................",
-  "..DDDDDDDDDDDDDDDDDD....",
-  "..DBBBBBBBBBBBBBBBBD....",
-  "..DBBBBBBBBBBBBBBBBD....",
-  "..DDDDDDtDDDDDDDDDDD....",
-  "..DBBBBBtBBBBBBBBBD.....",
-  "..DBBBBBtBBBBBBBBBD.....",
-  "..DBBBBBtBBBBBBBBBD.....",
-  "..DBBBBBtBBBBBBBBBD.....",
-  "..DBBBBBtBBBBBBBBBD.....",
-  "..DDDDDDtDDDDDDDDDDD....",
-  "..DBBBBBtBBBBBBBBBD.....",
-  "..DBBBBBtBBBBBBBBBD.....",
-  "..DBBBBBtBBBBBBBBBD.....",
-  "..DDDDDDDDDDDDDDDDDD....",
-  "..DBBBBBBBBBBBBBBBBD....",
-  "..DBBBBBBBBBBBBBBBBD....",
-  "..DDDDDDDDDDDDDDDDDD....",
-  "........................",
-  "........................",
-  "........................",
-  "........................",
-  "........................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "....DDDDDDDDDDDDDDDDDDDDDDDD....",
+  "....DBBBBBBBBBBBBBBBBBBBBBD.....",
+  "....DBBBBBBBBBBBBBBBBBBBBD......",
+  "....DDDDDDDDDDDtDDDDDDDDDDD.....",
+  "....DBBBBBBBBBtBBBBBBBBBBBD.....",
+  "....DBBBBBBBBBtBBBBBBBBBBBD.....",
+  "....DBBBBBBBBBtBBBBBBBBBBBD.....",
+  "....DBBBBBBBBBtBBBBBBBBBBBD.....",
+  "....DBBBBBBBBBtBBBBBBBBBBBD.....",
+  "....DDDDDDDDDDtDDDDDDDDDDDD.....",
+  "....DBBBBBBBBBtBBBBBBBBBBBD.....",
+  "....DBBBBBBBBBtBBBBBBBBBBBD.....",
+  "....DBBBBBBBBBtBBBBBBBBBBBD.....",
+  "....DBBBBBBBBBtBBBBBBBBBBBD.....",
+  "....DBBBBBBBBBtBBBBBBBBBBBD.....",
+  "....DDDDDDDDDDtDDDDDDDDDDDD.....",
+  "....DBBBBBBBBBtBBBBBBBBBBBD.....",
+  "....DBBBBBBBBBtBBBBBBBBBBBD.....",
+  "....DBBBBBBBBBtBBBBBBBBBBBD.....",
+  "....DBBBBBBBBBtBBBBBBBBBBBD.....",
+  "....DBBBBBBBBBtBBBBBBBBBBBD.....",
+  "....DDDDDDDDDDDDDDDDDDDDDDDD....",
+  "....DbbbbbbbbbbbbbbbbbbbbdD.....",
+  "....DDDDDDDDDDDDDDDDDDDDDDDD....",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
 ];
 
-/* ---------------- coffee maker 24×24 ---------------- */
+/* ---------------- coffee maker 32×32 ---------------- */
 const COFFEE_MAKER = [
-  "........................",
-  "...DDDDDDDDDDDDDDDD.....",
-  "..DggggggggggggggggD....",
-  "..DgDDDDDDDDDDDDDDgD....",
-  "..DgDffffffffffffDgD....",
-  "..DgDffffffffffffDgD....",
-  "..DgDDDDDDDDDDDDDDgD....",
-  "..DggggggggggggggggD....",
-  "..DggggggggggggggggD....",
-  "..DgGGGGGGGGGGGGGGgD....",
-  "..DgGrrGGGGGGGGGGGgD....",
-  "..DgGGGGGGGGGGGGGGgD....",
-  "..DggggggggggggggggD....",
-  "..DggggggggggggggggD....",
-  "..DgGGGGGGGGGGGGGGgD....",
-  "..DgGffffffffffffGgD....",
-  "..DgGffffffffffffGgD....",
-  "..DgGGGGGGGGGGGGGGgD....",
-  "..DggggggggggggggggD....",
-  "..DDDDDDDDDDDDDDDDDD....",
-  "........................",
-  "........................",
-  "........................",
-  "........................",
+  "................................",
+  "................................",
+  ".....DDDDDDDDDDDDDDDDDDDD.......",
+  ".....DggggggggggggggggggD.......",
+  ".....DgDDDDDDDDDDDDDDDDgD.......",
+  ".....DgDffffffffffffffffDgD.....",
+  ".....DgDffffffffffffffffDgD.....",
+  ".....DgDffffffffffffffffDgD.....",
+  ".....DgDffffffffffffffffDgD.....",
+  ".....DgDDDDDDDDDDDDDDDDDDgD.....",
+  ".....DggggggggggggggggggD.......",
+  ".....DgGGGGGGGGGGGGGGGGDgD......",
+  ".....DgGGrrGGGGGGGGGGGGDgD......",
+  ".....DgGGGGGGGGGGGGGGGGDgD......",
+  ".....DggggggggggggggggggD.......",
+  ".....DgDDDDDDDDDDDDDDDDgD.......",
+  ".....DgDffffffffffffffffDgD.....",
+  ".....DgDffffffffffffffffDgD.....",
+  ".....DgDffffffffffffffffDgD.....",
+  ".....DgDffffffffffffffffDgD.....",
+  ".....DgDDDDDDDDDDDDDDDDDDgD.....",
+  ".....DggggggggggggggggggD.......",
+  ".....DgGGGGGGGGGGGGGGGGDgD......",
+  ".....DgGGGGGGGGGGkGGGGGDgD......",
+  ".....DggggggggggggggggggD.......",
+  ".....DggggggggggggggggggD.......",
+  ".....DDDDDDDDDDDDDDDDDDDD.......",
+  "......DDDDDDDDDDDDDDDDDD........",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
 ];
 
 function mk(rows: string[], palette: Record<string, string>): Sprite {
@@ -166,11 +200,3 @@ export const ITEM_SPRITES: Record<string, Sprite> = {
   box: mk(BOX, ITEM),
   coffee: mk(COFFEE_MAKER, ITEM),
 };
-
-if (typeof process !== "undefined" && process.env?.NODE_ENV !== "production") {
-  try {
-    assertSprites(ITEM_SPRITES);
-  } catch {
-    /* validated again by the preview tool */
-  }
-}

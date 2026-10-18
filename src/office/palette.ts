@@ -18,10 +18,13 @@ export const C = {
   wood: "#a06a3f",
   woodDark: "#7c4f2c",
   woodLight: "#c08a52",
+  woodHi: "#d9a06b",
 
   metal: "#b9c2c9",
   metalDark: "#7f8a92",
+  metalHi: "#e8edf1",
   plastic: "#d5d8da",
+  plasticShade: "#aab2b8",
 
   paper: "#f7f4e8",
   paperShade: "#d9d2bd",
@@ -72,6 +75,22 @@ export const C = {
   grout: "#b3ab99",
   shadow: "rgba(20,25,35,0.20)",
 } as const;
+
+/** Blend two #rrggbb colors (f=0 → a, f=1 → b). */
+export function lerpHex(a: string, b: string, f: number): string {
+  const pa = parseInt(a.slice(1), 16);
+  const pb = parseInt(b.slice(1), 16);
+  const ch = (sa: number, sb: number) => Math.round(sa * (1 - f) + sb * f);
+  const r = ch((pa >> 16) & 255, (pb >> 16) & 255);
+  const g = ch((pa >> 8) & 255, (pb >> 8) & 255);
+  const bl = ch(pa & 255, pb & 255);
+  return `#${((r << 16) | (g << 8) | bl).toString(16).padStart(6, "0")}`;
+}
+
+/** Lighten (f>0) or darken (f<0) a hex color toward white/black. */
+export function shade(hex: string, f: number): string {
+  return f >= 0 ? lerpHex(hex, "#ffffff", f) : lerpHex(hex, "#000000", -f);
+}
 
 /** Deterministic palette override for a bot, from its hash seed. */
 export function botPalette(seed: number): Record<string, string> {

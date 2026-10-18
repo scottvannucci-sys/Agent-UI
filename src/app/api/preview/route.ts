@@ -101,7 +101,8 @@ export async function GET(req: Request) {
   const scene = new OfficeScene();
   const now = 1_800_000; // fixed clock → deterministic frame
 
-  const hour = Number(new URL(req.url).searchParams.get("hour"));
+  const hourRaw = new URL(req.url).searchParams.get("hour");
+  const hour = hourRaw === null ? NaN : Number(hourRaw);
   scene.fixedDayPhase = Number.isFinite(hour) && hour >= 0 && hour <= 24 ? hour : 12;
   scene.syncBots(bots, now);
   // let everyone walk to their desks (~90 simulated seconds)
