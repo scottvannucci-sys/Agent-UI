@@ -26,6 +26,39 @@ const SPEED = 46; // px per second
 const BUBBLE_MS = 5200;
 const AMBIENT_MS = 9000;
 
+/** Ceiling light fixtures — warm floor pools + fixture plates. */
+const LIGHT_FIXTURES: Array<[number, number]> = [
+  [4, 8],
+  [9, 8],
+  [14, 8],
+  [19, 8],
+  [4, 12],
+  [9, 12],
+  [14, 12],
+  [19, 12],
+  [28, 9],
+  [32, 13],
+  [27, 2],
+  [32, 3],
+  [4, 2],
+  [7, 5],
+  [5, 18],
+  [10, 18],
+  [16, 18],
+  [21, 18],
+  [30, 18],
+];
+
+function lerpHex(a: string, b: string, f: number): string {
+  const pa = parseInt(a.slice(1), 16);
+  const pb = parseInt(b.slice(1), 16);
+  const ch = (sa: number, sb: number) => Math.round(sa * (1 - f) + sb * f);
+  const r = ch((pa >> 16) & 255, (pb >> 16) & 255);
+  const g = ch((pa >> 8) & 255, (pb >> 8) & 255);
+  const bl = ch(pa & 255, pb & 255);
+  return `#${((r << 16) | (g << 8) | bl).toString(16).padStart(6, "0")}`;
+}
+
 type Activity = "stand" | "walk" | "type" | "carry";
 
 interface Waypoint {
@@ -59,6 +92,9 @@ function nowS(): number {
 
 export class OfficeScene {
   selectedId: string | null = null;
+  hoverId: string | null = null;
+  /** Pin the time-of-day phase (0-24) for deterministic renders; null = real clock. */
+  fixedDayPhase: number | null = null;
   private entities = new Map<string, Entity>();
   private deskOwner = new Map<number, string>(); // deskIdx -> botId
   private activeDesks = new Set<string>();
@@ -66,6 +102,9 @@ export class OfficeScene {
   private gatewayRunning = true;
   private gatewayDegraded = false;
   private bossVisible = true;
+  private _night = 0;
+  private _sky = "#aee0ef";
+  private _skyBand = "#8fc4dc";
 
   constructor() {
     this.boss = {
@@ -367,11 +406,36 @@ export class OfficeScene {
 
   /* ---------------- drawing ---------------- */
 
+  /** Time of day 0-24 (real clock, or the pinned preview phase). */
+  private dayPhase(now: number): number {
+    if (this.fixedDayPhase != null) return this.fixedDayPhase;
+    const d = new Date(now);
+    return d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600;
+  }
+
+  private computeDaylight(now: number): void {
+    const phase = this.dayPhase(now);
+    let nf: number;
+    if (phase >= 8 && phase < 17) nf = 0;
+    else if (phase >= 20 || phase < 5) nf = 1;
+    else if (phase < 8) nf = 1 - (phase - 5) / 3;
+    else nf = (phase - 17) / 3;
+    this._night = Math.max(0, Math.min(1, nf));
+    // warm amber push at dawn/dusk only (zero at full day and full night)
+    const duskMix = Math.max(0, 1 - 2 * Math.abs(this._night - 0.5)) * 0.55;
+    this._sky = lerpHex(lerpHex("#aee0ef", "#16233f", this._night), "#f2a65e", duskMix);
+    this._skyBand = lerpHex(lerpHex("#8fc4dc", "#0d1526", this._night), "#f7c37a", duskMix * 0.5);
+  }
+
   draw(t: PixelTarget, now: number): void {
+    this.computeDaylight(now);
     this.drawFloor(t);
+    this.drawWallDecor(t, now);
+    this.drawLightPools(t, now);
     // furniture back-to-front
     const sorted = [...FURNITURE].sort((a, b) => a.y - b.y || a.x - b.x);
     for (const f of sorted) this.drawFurniture(t, f, now);
+    this.drawWetFloorSign(t, 18 * TILE, 9 * TILE);
 
     // entities back-to-front
     const ents = [...this.entities.values()].filter(
@@ -380,6 +444,10 @@ export class OfficeScene {
     if (this.gatewayRunning && this.bossVisible) ents.push(this.boss);
     ents.sort((a, b) => a.y - b.y);
     for (const e of ents) this.drawEntity(t, e, now);
+
+    // after-hours tint over everything but the bubbles
+    const na = this._night * 0.16;
+    if (na > 0.01) t.rect(0, 0, MAP_W * TILE, MAP_H * TILE, `rgba(14,20,44,${na.toFixed(3)})`);
 
     // bubbles last
     for (const e of ents) if (e.bubble) this.drawBubble(t, e);
@@ -449,8 +517,19 @@ export class OfficeScene {
     const ww = TILE - 6;
     const wh = TILE - 11;
     // sky with two-tone band
-    t.rect(wx, wy, ww, wh, C.sky);
-    t.rect(wx, wy, ww, Math.max(2, Math.floor(wh / 3)), C.skyDeep);
+    t.rect(wx, wy, ww, wh, this._sky);
+    t.rect(wx, wy, ww, Math.max(2, Math.floor(wh / 3)), this._skyBand);
+    // stars after dark — placed inside the panes, never on the frame cross
+    if (this._night > 0.55) {
+      const a = Math.min(1, (this._night - 0.55) / 0.45);
+      for (let i = 0; i < 3; i++) {
+        const col = 1 + ((px * 7 + py * 3 + i * 5) % (ww - 3));
+        const sxx = wx + (col >= Math.floor(ww / 2) ? col + 1 : col);
+        const row = 1 + ((px * 3 + py * 11 + i * 7) % (wh - 3));
+        const syy = wy + (row >= Math.floor(wh / 2) ? row + 1 : row);
+        t.rect(sxx, syy, 1, 1, `rgba(255,255,255,${(0.85 * a).toFixed(2)})`);
+      }
+    }
     // frame + cross
     t.rect(wx - 1, wy - 1, ww + 2, 1, C.windowFrame);
     t.rect(wx - 1, wy + wh, ww + 2, 1, C.windowFrame);
@@ -474,13 +553,119 @@ export class OfficeScene {
     t.rect(gx - 1, gy + gh, gw + 2, 1, C.windowFrame);
     t.rect(gx - 1, gy, 1, gh, C.windowFrame);
     t.rect(gx + gw, gy, 1, gh, C.windowFrame);
-    t.rect(gx, gy, gw, gh, C.window);
-    t.rect(gx, gy, gw, 3, C.skyDeep);
+    t.rect(gx, gy, gw, gh, this._sky);
+    t.rect(gx, gy, gw, 3, this._skyBand);
+    if (this._night > 0.55) {
+      const a = Math.min(1, (this._night - 0.55) / 0.45);
+      t.rect(gx + 4, gy + 2, 1, 1, `rgba(255,255,255,${(0.8 * a).toFixed(2)})`);
+      t.rect(gx + gw - 5, gy + 4, 1, 1, `rgba(255,255,255,${(0.7 * a).toFixed(2)})`);
+    }
     // reflection diagonal
     t.rect(gx + 3, gy + 2, 2, 1, "rgba(255,255,255,0.35)");
     t.rect(gx + 5, gy + 3, 2, 1, "rgba(255,255,255,0.2)");
     t.rect(gx + gw - 6, gy + gh - 4, 2, 1, "rgba(255,255,255,0.25)");
     t.rect(gx + Math.floor(gw / 2), gy, 1, gh, C.windowFrame);
+  }
+
+  /* ---------------- lighting & wall decor ---------------- */
+
+  private drawLightPools(t: PixelTarget, now: number): void {
+    void now;
+    for (const [lx, ly] of LIGHT_FIXTURES) {
+      const px = lx * TILE;
+      const py = ly * TILE;
+      const warm = 0.06 + this._night * 0.16;
+      t.rect(px + 2, py + 3, TILE - 4, TILE - 6, `rgba(255,238,190,${(warm * 0.5).toFixed(3)})`);
+      t.rect(px + 6, py + 6, TILE - 12, TILE - 12, `rgba(255,238,190,${warm.toFixed(3)})`);
+      // fixture plate
+      t.rect(px + 7, py + 7, 10, 10, C.metalDark);
+      t.rect(
+        px + 8,
+        py + 8,
+        8,
+        8,
+        this._night > 0.3
+          ? `rgba(255,240,200,${(0.5 + this._night * 0.4).toFixed(2)})`
+          : "#e8eef2",
+      );
+    }
+  }
+
+  /** Framed portraits, wall clock, motivational poster, reception sign. */
+  private drawWallDecor(t: PixelTarget, now: number): void {
+    this.drawPortrait(t, 6 * TILE, 6 * TILE);
+    this.drawPortrait(t, 15 * TILE, 6 * TILE);
+    this.drawWallClock(t, 9 * TILE, 6 * TILE, now);
+    this.drawPoster(t, 12 * TILE, 6 * TILE);
+    // DUNDER BOTS, INC. over reception
+    const sx = 8 * TILE;
+    const sy = 21 * TILE;
+    const sw = 3 * TILE;
+    t.rect(sx, sy + 4, sw, 16, C.navy);
+    t.rect(sx + 2, sy + 6, sw - 4, 12, "#31435e");
+    const label = "DUNDER BOTS, INC.";
+    const w = textWidth(label);
+    drawText(t, label, sx + Math.round((sw - w) / 2), sy + 9, "#f5f0e2");
+    t.rect(sx + 4, sy + 7, 1, 1, C.metal);
+    t.rect(sx + sw - 5, sy + 7, 1, 1, C.metal);
+  }
+
+  /** Employee-of-the-month style portrait: frame, mat, tiny face, plaque. */
+  private drawPortrait(t: PixelTarget, px: number, py: number): void {
+    t.rect(px + 5, py + 6, 14, 13, "#6b4f37");
+    t.rect(px + 6, py + 7, 12, 11, "#e8eef2");
+    t.rect(px + 9, py + 8, 6, 2, "#3a2a1c"); // hair
+    t.rect(px + 9, py + 10, 6, 4, C.skin[0]); // face
+    t.rect(px + 10, py + 11, 1, 1, C.outline);
+    t.rect(px + 13, py + 11, 1, 1, C.outline);
+    t.rect(px + 11, py + 12, 2, 2, C.navy); // tie
+    t.rect(px + 9, py + 14, 6, 3, C.navy); // shoulders
+    t.rect(px + 8, py + 17, 8, 1, C.amber); // plaque
+  }
+
+  private drawWallClock(t: PixelTarget, px: number, py: number, now: number): void {
+    const cx = px + 12;
+    const cy = py + 11;
+    t.rect(px + 6, py + 5, 12, 12, "#e8eef2");
+    t.rect(px + 6, py + 5, 12, 1, C.windowFrame);
+    t.rect(px + 6, py + 16, 12, 1, C.windowFrame);
+    t.rect(px + 6, py + 5, 1, 12, C.windowFrame);
+    t.rect(px + 17, py + 5, 1, 12, C.windowFrame);
+    const phase = this.dayPhase(now);
+    const mins = Math.floor((phase % 1) * 60);
+    const hAng = ((phase % 12) / 12) * Math.PI * 2 - Math.PI / 2;
+    const mAng = (mins / 60) * Math.PI * 2 - Math.PI / 2;
+    this.clockHand(t, cx, cy, hAng, 3);
+    this.clockHand(t, cx, cy, mAng, 5);
+    t.rect(cx, cy, 1, 1, C.red);
+  }
+
+  private clockHand(t: PixelTarget, cx: number, cy: number, ang: number, len: number): void {
+    for (let i = 1; i <= len; i++) {
+      t.rect(Math.round(cx + Math.cos(ang) * i), Math.round(cy + Math.sin(ang) * i), 1, 1, C.outline);
+    }
+  }
+
+  /** "HANG IN THERE"-flavored motivational poster: mountain + sun. */
+  private drawPoster(t: PixelTarget, px: number, py: number): void {
+    t.rect(px + 4, py + 4, 16, 18, "#6b4f37");
+    t.rect(px + 5, py + 5, 14, 16, "#cfe4ee");
+    t.rect(px + 5, py + 13, 14, 8, "#7a9e6b");
+    t.rect(px + 10, py + 8, 3, 1, "#8a8f96");
+    t.rect(px + 9, py + 9, 5, 1, "#8a8f96");
+    t.rect(px + 8, py + 10, 7, 1, "#8a8f96");
+    t.rect(px + 7, py + 11, 9, 2, "#8a8f96");
+    t.rect(px + 11, py + 9, 1, 1, "#ffffff");
+    t.rect(px + 10, py + 8, 1, 1, "#ffffff");
+    t.rect(px + 6, py + 6, 2, 2, "#f7d97a");
+  }
+
+  private drawWetFloorSign(t: PixelTarget, px: number, py: number): void {
+    t.rect(px + 11, py + 8, 3, 2, C.amber);
+    t.rect(px + 9, py + 10, 7, 2, C.amber);
+    t.rect(px + 7, py + 12, 11, 2, C.amber);
+    t.rect(px + 11, py + 9, 1, 4, C.outline);
+    t.rect(px + 11, py + 15, 1, 1, C.outline);
   }
 
   /* ---------------- furniture ---------------- */
@@ -493,7 +678,7 @@ export class OfficeScene {
     const blink = Math.floor(now / 700) % 2 === 0;
     switch (f.kind) {
       case "desk":
-        this.drawDesk(t, px, py, W, on, now);
+        this.drawDesk(t, px, py, W, on, now, (f.x * 7 + f.y * 13) % 4);
         break;
       case "chair":
         this.drawChair(t, px, py);
@@ -543,7 +728,7 @@ export class OfficeScene {
         this.drawFridge(t, px, py);
         break;
       case "counter":
-        this.drawCounter(t, px, py);
+        this.drawCounter(t, px, py, f.x % 3 === 0, now);
         break;
       case "printer":
         this.drawPrinter(t, px, py, now);
@@ -575,7 +760,15 @@ export class OfficeScene {
     }
   }
 
-  private drawDesk(t: PixelTarget, px: number, py: number, W: number, on: boolean, now: number): void {
+  private drawDesk(
+    t: PixelTarget,
+    px: number,
+    py: number,
+    W: number,
+    on: boolean,
+    now: number,
+    variant = 0,
+  ): void {
     // contact shadow
     t.rect(px + 3, py + TILE - 1, W - 6, 1, C.shadow);
     // legs
@@ -612,6 +805,23 @@ export class OfficeScene {
     t.rect(px + 2, py + 11, 2, 2, "#e8eef2");
     t.rect(px + 17, py + 11, 4, 2, C.paper);
     t.rect(px + 17, py + 11, 4, 1, C.paperShade);
+    // deterministic desk dressing
+    if (variant === 1) {
+      // sticky notes on the monitor bezel
+      t.rect(px + 17, py + 1, 2, 2, C.amber);
+      t.rect(px + 17, py + 4, 2, 2, "#e8eef2");
+      t.rect(px + 16, py + 6, 2, 2, C.amber);
+    } else if (variant === 2) {
+      // tiny desk plant
+      t.rect(px + 1, py + 8, 3, 3, "#a3562e");
+      t.rect(px + 1, py + 6, 1, 2, C.greenLight);
+      t.rect(px + 2, py + 5, 1, 3, C.greenLight);
+      t.rect(px + 3, py + 6, 1, 2, "#4f7a3a");
+    } else if (variant === 3) {
+      // photo frame
+      t.rect(px + 1, py + 2, 4, 5, C.metalDark);
+      t.rect(px + 2, py + 3, 2, 3, "#c9a86b");
+    }
   }
 
   private drawChair(t: PixelTarget, px: number, py: number): void {
@@ -723,13 +933,20 @@ export class OfficeScene {
     t.rect(px + 12, py + 16, 2, 2, "#4f6d9e");
   }
 
-  private drawCounter(t: PixelTarget, px: number, py: number): void {
+  private drawCounter(t: PixelTarget, px: number, py: number, withMicro = false, now = 0): void {
     t.rect(px, py + TILE - 1, TILE, 1, C.shadow);
     t.rect(px, py + 6, TILE, 3, C.metal);
     t.rect(px, py + 6, TILE, 1, "#c9ced2");
     t.rect(px + 1, py + 9, TILE - 2, 13, C.woodDark);
     t.rect(px + 3, py + 14, TILE - 6, 1, C.wood);
     t.rect(px + 8, py + 11, 3, 2, C.metal);
+    if (withMicro) {
+      // microwave on the countertop
+      t.rect(px + 5, py + 1, 13, 6, C.metalDark);
+      t.rect(px + 6, py + 2, 8, 4, "#1a1d24");
+      t.rect(px + 15, py + 3, 2, 1, Math.floor(now / 800) % 3 === 0 ? C.greenLight : C.metal);
+      t.rect(px + 14, py + 2, 1, 4, C.metal);
+    }
   }
 
   private drawPrinter(t: PixelTarget, px: number, py: number, now: number): void {
@@ -805,10 +1022,14 @@ export class OfficeScene {
     // leaning book
     t.rect(px + 9, py + 6, 1, 3, C.red);
     t.rect(px + 10, py + 5, 1, 4, C.red);
+    // the Dundie award
+    t.rect(px + 11, py + 8, 3, 1, C.woodDark); // base
+    t.rect(px + 12, py + 7, 1, 1, C.metal); // stem
+    t.rect(px + 11, py + 5, 3, 2, C.amber); // cup
     // ream stack
-    t.rect(px + 13, py + 5, 6, 4, C.paper);
-    t.rect(px + 13, py + 5, 6, 1, C.paperShade);
-    t.rect(px + 14, py + 7, 4, 1, "rgba(38,38,46,0.25)");
+    t.rect(px + 16, py + 5, 6, 4, C.paper);
+    t.rect(px + 16, py + 5, 6, 1, C.paperShade);
+    t.rect(px + 17, py + 7, 4, 1, "rgba(38,38,46,0.25)");
   }
 
   private drawBobble(t: PixelTarget, px: number, py: number): void {
@@ -870,8 +1091,24 @@ export class OfficeScene {
     }
     if (e.carry && e.activity !== "type") frame = "carry";
 
+    // pupils lean toward where the bot is headed; blink phase is per-bot
+    const dirX = e.path.length > 1 ? Math.sign(e.path[0].x - e.x) : 0;
     drawBotShadow(t, e.x, Math.round(e.y));
-    drawBot(t, e.x, Math.round(e.y), look, frame);
+    drawBot(t, e.x, Math.round(e.y), look, frame, {
+      now,
+      talking: !!e.bubble,
+      pupilDx: dirX,
+      blinkSeed: seed % 7,
+    });
+
+    // cupped coffee on the way to/from the machine
+    if ((e.spot === "coffee" || e.spot === "watercooler") && e.activity === "stand") {
+      const bpx = Math.round(e.x) - 12;
+      const bpy = Math.round(e.y) - CHAR_H;
+      t.rect(bpx + 17, bpy + 19, 3, 3, "#e8eef2");
+      t.rect(bpx + 17, bpy + 19, 3, 1, C.coffee);
+      t.rect(bpx + 20, bpy + 20, 1, 1, "#e8eef2");
+    }
 
     const seated = e.activity === "type";
     const top = Math.round(e.y) - (seated ? 27 : CHAR_H + 1);
@@ -891,6 +1128,21 @@ export class OfficeScene {
       t.rect(l, botY - 4, 1, 5, b);
       t.rect(r - 4, botY, 5, 1, b);
       t.rect(r, botY - 4, 1, 5, b);
+    }
+
+    if (this.hoverId && this.hoverId === e.id && this.selectedId !== e.id) {
+      const l = px - 3;
+      const r = px + 27;
+      const topY = top - 3;
+      const botY = Math.round(e.y) + 2;
+      t.rect(l, topY, 5, 1, "rgba(255,255,255,0.5)");
+      t.rect(l, topY, 1, 5, "rgba(255,255,255,0.5)");
+      t.rect(r - 4, topY, 5, 1, "rgba(255,255,255,0.5)");
+      t.rect(r, topY, 1, 5, "rgba(255,255,255,0.5)");
+      t.rect(l, botY, 5, 1, "rgba(255,255,255,0.5)");
+      t.rect(l, botY - 4, 1, 5, "rgba(255,255,255,0.5)");
+      t.rect(r - 4, botY, 5, 1, "rgba(255,255,255,0.5)");
+      t.rect(r, botY - 4, 1, 5, "rgba(255,255,255,0.5)");
     }
 
     if (e.spawnFlash > now) {

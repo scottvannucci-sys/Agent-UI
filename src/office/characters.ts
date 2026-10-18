@@ -13,6 +13,33 @@ export const CHAR_H = 30;
 
 export type BotFrame = "stand" | "walkA" | "walkB" | "sitA" | "sitB" | "carry";
 
+export interface DrawBotOpts {
+  /** wall-clock ms — drives blinking and talking mouths */
+  now?: number;
+  /** mouth animates while a speech bubble is up */
+  talking?: boolean;
+  /** -1..1: pupils lean toward walking direction */
+  pupilDx?: number;
+  /** per-bot phase so the office doesn't blink in sync */
+  blinkSeed?: number;
+  /** 1px silhouette outline (default on) */
+  outline?: boolean;
+}
+
+/** Wraps a target and stamps the whole silhouette in the outline color,
+ * offset by (ox, oy) — four stamps give a crisp 1px rim around the sprite. */
+class StampTarget implements PixelTarget {
+  constructor(
+    private readonly inner: PixelTarget,
+    private readonly ox: number,
+    private readonly oy: number,
+  ) {}
+  rect(x: number, y: number, w: number, h: number, color: string): void {
+    if (color.startsWith("rgba")) return; // translucent fx are not silhouette
+    this.inner.rect(x + this.ox, y + this.oy, w, h, C.outline);
+  }
+}
+
 export interface BotLook {
   skin: string;
   hair: string;
@@ -70,11 +97,51 @@ export function drawBotShadow(t: PixelTarget, cx: number, feetY: number): void {
   R(t, Math.round(cx) - 6, feetY, 12, 1, "rgba(20,25,35,0.12)");
 }
 
+/** eyes with blink + pupil lean; row = top row of the 2px-tall eye */
+function drawEyes(
+  t: PixelTarget,
+  px: number,
+  py: number,
+  row: number,
+  opts: DrawBotOpts,
+): void {
+  const dx = Math.max(-1, Math.min(1, opts.pupilDx ?? 0));
+  const now = opts.now ?? 0;
+  const blinking =
+    opts.now !== undefined && (now / 1000 + (opts.blinkSeed ?? 0) * 1.37) % 5.3 < 0.14;
+  if (blinking) {
+    R(t, px + 9, py + row + 1, 3, 1, C.outline);
+    R(t, px + 12, py + row + 1, 3, 1, C.outline);
+    return;
+  }
+  R(t, px + 9, py + row, 3, 2, "#ffffff");
+  R(t, px + 12, py + row, 3, 2, "#ffffff");
+  R(t, px + 10 + dx, py + row, 1, 2, C.outline);
+  R(t, px + 13 + dx, py + row, 1, 2, C.outline);
+}
+
+/** mouth with talk animation; row = top row of the mouth */
+function drawMouth(t: PixelTarget, px: number, py: number, row: number, opts: DrawBotOpts): void {
+  const open = opts.talking && Math.floor((opts.now ?? 0) / 160) % 2 === 0;
+  if (open) {
+    R(t, px + 11, py + row, 2, 2, "rgba(38,38,46,0.85)");
+  } else {
+    R(t, px + 11, py + row, 2, 1, "rgba(38,38,46,0.75)");
+  }
+}
+
 /**
  * Draw a bot with feet at (cx, feetY) — px is the left edge of the 24px cell.
  * `py` is derived by the caller via drawBotAt().
  */
-function drawBody(t: PixelTarget, px: number, py: number, look: BotLook, frame: BotFrame): void {
+function drawBody(
+  t: PixelTarget,
+  px: number,
+  py: number,
+  look: BotLook,
+  frame: BotFrame,
+  opts: DrawBotOpts = {},
+): void {
   const sitting = frame === "sitA" || frame === "sitB";
   const bob = frame === "walkA" || frame === "walkB" ? 0 : 0;
 
@@ -125,13 +192,8 @@ function drawBody(t: PixelTarget, px: number, py: number, look: BotLook, frame: 
     }
 
     /* ---------------- face ---------------- */
-    // eyes: white + pupil (blink handled by frame-less time in caller? keep open)
-    R(t, px + 9, py + 8, 3, 2, "#ffffff");
-    R(t, px + 12, py + 8, 3, 2, "#ffffff");
-    R(t, px + 10, py + 8, 1, 2, C.outline);
-    R(t, px + 13, py + 8, 1, 2, C.outline);
-    // mouth
-    R(t, px + 11, py + 11, 2, 1, "rgba(38,38,46,0.75)");
+    drawEyes(t, px, py, 8, opts);
+    drawMouth(t, px, py, 11, opts);
     if (look.glasses) {
       R(t, px + 8, py + 7, 5, 1, C.outline);
       R(t, px + 8, py + 7, 1, 4, C.outline);
@@ -175,12 +237,9 @@ function drawBody(t: PixelTarget, px: number, py: number, look: BotLook, frame: 
         R(t, px + 14, py - 3, 2, 1, H);
       }
     }
-    // eyes rows 4-5
-    R(t, px + 9, py + 4, 3, 2, "#ffffff");
-    R(t, px + 12, py + 4, 3, 2, "#ffffff");
-    R(t, px + 10, py + 4, 1, 2, C.outline);
-    R(t, px + 13, py + 4, 1, 2, C.outline);
-    R(t, px + 11, py + 7, 2, 1, "rgba(38,38,46,0.75)");
+    // eyes rows 4-5, mouth row 7
+    drawEyes(t, px, py, 4, opts);
+    drawMouth(t, px, py, 7, opts);
     if (look.glasses) {
       R(t, px + 8, py + 3, 5, 1, C.outline);
       R(t, px + 8, py + 3, 1, 4, C.outline);
@@ -260,7 +319,19 @@ export function drawBot(
   feetY: number,
   look: BotLook,
   frame: BotFrame,
+  opts: DrawBotOpts = {},
 ): void {
   const { px, py } = botDrawPos(cx, feetY, frame);
-  drawBody(t, px, py, look, frame);
+  if (opts.outline !== false) {
+    // 4-direction silhouette stamps → crisp 1px outline around the sprite
+    for (const [ox, oy] of [
+      [-1, 0],
+      [1, 0],
+      [0, -1],
+      [0, 1],
+    ] as const) {
+      drawBody(new StampTarget(t, ox, oy), px, py, look, frame, { ...opts, outline: false });
+    }
+  }
+  drawBody(t, px, py, look, frame, opts);
 }

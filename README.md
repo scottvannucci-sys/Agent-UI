@@ -139,9 +139,20 @@ tools/
   monitors show scrolling terminal lines, the coffee machine steams, the
   copier runs a scanning light, the watercooler bottle bubbles, and the boss's
   desk lamp lights the office only while the gateway is healthy.
+- **Day/night cycle** — windows show a dawn/day/dusk/night sky (with stars
+  after dark), ceiling fixtures cast warm light pools that strengthen in the
+  evening, a wall clock shows the real time, and the whole office picks up a
+  subtle after-hours tint. `/api/preview?hour=23` renders any time of day.
+- **Character life** — every bot gets a 1px silhouette outline, blinks on its
+  own phase, talks (mouth animation) while a speech bubble is up, leans its
+  pupils toward its walking direction, and cups a coffee at the machine.
+- **Set dressing** — deterministic desk props (sticky notes, desk plants,
+  photo frames), a microwave in the kitchen, the Dundie award on the shelf,
+  Employee-of-the-Month portraits, a motivational poster, a wet-floor sign,
+  and a big *DUNDER BOTS, INC.* sign over reception.
 - Bot movement is BFS over the walkable tile grid; states map to locations
   (desk seat, watercooler, coffee machine, conference seats, boss office,
-  printer for paper errands).
+  printer for paper errands). Hovering a bot highlights it; clicking selects.
 
 ## Ideas welcome next
 

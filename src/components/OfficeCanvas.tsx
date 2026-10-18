@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { OfficeScene } from "@/office/scene";
 import { MAP_H, MAP_W, TILE } from "@/office/floorplan";
 import type { BotSpec } from "@/lib/hermes/derive";
@@ -29,6 +29,7 @@ export default function OfficeCanvas({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const sceneRef = useRef<OfficeScene | null>(null);
   const seenEvents = useRef<Set<number>>(new Set());
+  const [hoverId, setHoverId] = useState<string | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -48,9 +49,11 @@ export default function OfficeCanvas({
 
     let raf = 0;
     let last = performance.now();
-    const loop = (nowMs: number) => {
-      const dt = Math.min(0.05, (nowMs - last) / 1000);
-      last = nowMs;
+    const loop = (rafNow: number) => {
+      const dt = Math.min(0.05, (rafNow - last) / 1000);
+      last = rafNow;
+      // wall-clock ms everywhere so bubbles/flashes/day-night agree
+      const nowMs = Date.now();
       scene.update(dt, nowMs);
       scene.draw(target, nowMs);
       raf = requestAnimationFrame(loop);
@@ -77,6 +80,10 @@ export default function OfficeCanvas({
   }, [selectedId]);
 
   useEffect(() => {
+    if (sceneRef.current) sceneRef.current.hoverId = hoverId;
+  }, [hoverId]);
+
+  useEffect(() => {
     sceneRef.current?.setGateway(gatewayRunning, gatewayDegraded);
   }, [gatewayRunning, gatewayDegraded]);
 
@@ -97,6 +104,8 @@ export default function OfficeCanvas({
         width={WORLD_W}
         height={WORLD_H}
         onClick={(e) => onSelect(pickAt(e.clientX, e.clientY))}
+        onMouseMove={(e) => setHoverId(pickAt(e.clientX, e.clientY))}
+        onMouseLeave={() => setHoverId(null)}
         style={{ cursor: "pointer" }}
         aria-label="Dunder Bots office floor plan"
       />

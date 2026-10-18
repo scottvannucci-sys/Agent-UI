@@ -93,13 +93,16 @@ function encodePNG(r: Raster): Buffer {
   ]);
 }
 
-/** GET /api/preview — a PNG postcard of the office (demo staff), for docs & tests. */
-export async function GET() {
+/** GET /api/preview — a PNG postcard of the office (demo staff), for docs & tests.
+ * Optional ?hour=0-24 renders a specific time of day (default noon). */
+export async function GET(req: Request) {
   const snap = await fetchMockSnapshot();
   const bots = deriveBots(snap);
   const scene = new OfficeScene();
   const now = 1_800_000; // fixed clock → deterministic frame
 
+  const hour = Number(new URL(req.url).searchParams.get("hour"));
+  scene.fixedDayPhase = Number.isFinite(hour) && hour >= 0 && hour <= 24 ? hour : 12;
   scene.syncBots(bots, now);
   // let everyone walk to their desks (~90 simulated seconds)
   for (let i = 0; i < 90 * 30; i++) scene.update(1 / 30, now);
